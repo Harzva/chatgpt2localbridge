@@ -7,6 +7,22 @@ npm run build
 LOCALBRIDGE_POLICY_PATH="$PWD/bridge.policy.json" node dist/index.js --http 3838
 ```
 
+## Install As A Mac LaunchAgent
+
+```bash
+node dist/index.js init --root ~/Projects
+scripts/install-launchd.sh
+```
+
+If port 3838 is already used, change `LOCALBRIDGE_PORT` and
+`LOCALBRIDGE_PUBLIC_BASE_URL` in `.env.local`, then run the installer again.
+
+Stop it with:
+
+```bash
+scripts/stop-launchd.sh
+```
+
 ## Health
 
 ```bash

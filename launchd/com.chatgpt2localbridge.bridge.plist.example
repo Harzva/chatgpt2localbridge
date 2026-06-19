@@ -27,6 +27,8 @@
     <string>https://YOUR-FIXED-DOMAIN.ngrok-free.dev</string>
     <key>LOCALBRIDGE_OAUTH_UNLOCK_CODE</key>
     <string>REPLACE_WITH_LONG_RANDOM_CODE</string>
+    <key>LOCALBRIDGE_DASHBOARD_TOKEN</key>
+    <string>REPLACE_WITH_LOCAL_DASHBOARD_TOKEN</string>
     <key>LOCALBRIDGE_ALLOW_URL_TOKEN</key>
     <string>0</string>
   </dict>
