@@ -18,6 +18,8 @@
     <a href="./docs/agent-computer-use.html">Agent tutorial</a>
     ·
     <a href="./docs/alternatives.md">Alternatives</a>
+    ·
+    <a href="./docs/sync-flows.md">Sync flows</a>
   </p>
 </div>
 
@@ -54,8 +56,6 @@ ChatGPT does not directly mount your disk. It calls MCP tools, and every file op
 
 ## 30-Second Install
 
-After this repository is published, replace `harzva` with the GitHub owner:
-
 ```bash
 npx github:harzva/chatgpt2localbridge init --root ~/Projects
 set -a; source .env.local; set +a
@@ -78,6 +78,12 @@ Health check:
 
 ```bash
 curl -sS http://127.0.0.1:3838/health
+```
+
+Local operator console:
+
+```text
+http://127.0.0.1:3838/app
 ```
 
 ## ChatGPT Connector Setup
@@ -127,7 +133,18 @@ Full guides:
 | Shell/tests | `shell.exec`, `test.detect`, `test.run` |
 | Git | `git.status`, `git.diff`, `git.checkpoint`, `git.revert` |
 | Runtime | `workspace.*`, `task.*`, `process.*`, `port.check` |
-| Bridge | `bridge.status`, `bridge.health`, `bridge.logs`, `service.restart` |
+| Cloud sync | `cloud.download` |
+| Bridge | `bridge.status`, `bridge.health`, `bridge.logs`, `bridge.activity`, `service.restart` |
+
+## File Sync And Activity
+
+- Local files can be read by ChatGPT through approved MCP tools.
+- ChatGPT/App-provided cloud file download URLs can be written back to local disk with `cloud.download`.
+- Tool calls are persisted to `tool-calls.jsonl`.
+- File writes, downloads, tasks, processes, and service restarts are persisted to `audit.jsonl`.
+- The local console at `/app` shows status, tool calls, and audit events.
+
+See [file sync flows](./docs/sync-flows.md).
 
 ## Security Defaults
 
@@ -135,6 +152,7 @@ Full guides:
 - Keep `allowedProjectRoots` narrow.
 - Never commit `.env.local`, `bridge.policy.json`, OAuth stores, tokens, cookies, or unlock codes.
 - Prefer OAuth over URL tokens.
+- Set `LOCALBRIDGE_DASHBOARD_TOKEN` before using `/app`.
 - Review shell deny rules before enabling shell access for broad workspaces.
 
 See [security model](./docs/security.md).
@@ -173,7 +191,6 @@ npm run docs:preview
 
 ## Public Release Checklist
 
-- [ ] Replace `harzva` placeholders after creating the GitHub repository.
 - [ ] Enable GitHub Pages with the included workflow.
 - [ ] Confirm `npm test` passes in GitHub Actions.
 - [ ] Keep `.env.local` and `bridge.policy.json` untracked.

@@ -7,6 +7,7 @@ import {
   handleOAuthRequest,
   isOAuthTokenAuthorized,
 } from './oauth.js';
+import { handleDashboardRequest } from './dashboard.js';
 
 // ── HTTP Transport for ChatGPT MCP Connectors ───────────────────────────────
 //
@@ -38,6 +39,8 @@ export async function startHttpServer(
 
     const url = new URL(req.url ?? '/', `http://localhost:${port}`);
     const path = url.pathname;
+
+    if (handleDashboardRequest(req, res, url, config)) return;
 
     try {
       if (await handleOAuthRequest(req, res, url, config)) return;

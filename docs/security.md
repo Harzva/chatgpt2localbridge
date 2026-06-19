@@ -15,6 +15,7 @@ ChatGPT2LocalBridge is powerful because it lets a remote ChatGPT session call lo
 - `.env`
 - `bridge.policy.json`
 - OAuth store files
+- dashboard tokens
 - API keys
 - cookies
 - tokens
@@ -30,3 +31,5 @@ ChatGPT2LocalBridge is powerful because it lets a remote ChatGPT session call lo
 4. Use a long random `LOCALBRIDGE_OAUTH_UNLOCK_CODE`.
 5. Keep `LOCALBRIDGE_ALLOW_URL_TOKEN=0`.
 6. Keep `allowedProjectRoots` narrow.
+7. Use `cloud.download` only with trusted HTTPS file URLs.
+8. Set `LOCALBRIDGE_DASHBOARD_TOKEN` before exposing the local console.

@@ -10,6 +10,13 @@ import { createHash } from 'node:crypto';
 import type { BridgeConfig } from './config.js';
 import { snapshotProject } from './project.js';
 import { getRawDiff, getChangedFiles, parseUnifiedDiff } from './diffEngine.js';
+import {
+  appendToolCall,
+  readAuditEvents,
+  readToolCalls,
+  sanitizeForLog,
+  summarizeToolResult,
+} from './activity.js';
 
 const execAsync = promisify(exec);
 
@@ -164,6 +171,30 @@ const processOutput = {
   status: z.enum(['running', 'exited', 'unknown']),
   startedAt: z.string(),
   updatedAt: z.string(),
+};
+
+const toolCallOutput = {
+  id: z.string(),
+  ts: z.string(),
+  tool: z.string(),
+  status: z.enum(['started', 'ok', 'error']),
+  durationMs: z.number().optional(),
+  args: z.record(z.unknown()).optional(),
+  result: z.record(z.unknown()).optional(),
+  error: z.string().optional(),
+};
+
+const auditEventOutput = {
+  ts: z.string(),
+  action: z.string(),
+};
+
+const cloudDownloadOutput = {
+  file: z.string(),
+  bytes: z.number(),
+  sha256: z.string(),
+  contentType: z.string().optional(),
+  sourceUrlHost: z.string(),
 };
 
 export function createMcpServer(config: BridgeConfig): McpServer {
@@ -387,6 +418,49 @@ export function createMcpServer(config: BridgeConfig): McpServer {
     fs.writeFileSync(target, content, 'utf-8');
     auditFileOperation('file.write', root, [{ path: target, before, after: fileDigest(target) }]);
     return fileChangeResponse(root, file, `Wrote ${file}`);
+  }));
+
+  server.registerTool('cloud.download', {
+    title: 'Download Cloud File',
+    description: 'Download a ChatGPT/App-provided HTTPS file URL into an approved local workspace. Use this when a cloud-side file has a download link and should be synced to local disk.',
+    inputSchema: {
+      projectPath: z.string(),
+      url: z.string().url(),
+      file: z.string(),
+      overwrite: z.boolean().default(false),
+      maxBytes: z.number().int().min(1).max(100 * 1024 * 1024).default(50 * 1024 * 1024),
+      expectedSha256: z.string().regex(/^[a-f0-9]{64}$/i).optional(),
+    },
+    outputSchema: cloudDownloadOutput,
+    annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: true },
+  }, withToolLogging('cloud.download', async ({ projectPath, url, file, overwrite, maxBytes, expectedSha256 }) => {
+    const root = resolveProject(projectPath);
+    const target = resolveInsideProject(root, file);
+    if (fs.existsSync(target) && !overwrite) {
+      return { content: [{ type: 'text' as const, text: `Download cancelled: target exists: ${file}` }], isError: true };
+    }
+    const before = fileDigest(target);
+    const tempTarget = path.join(path.dirname(target), `.${path.basename(target)}.${Date.now()}.download`);
+    try {
+      const downloaded = await downloadToLocalFile(url, tempTarget, maxBytes);
+      if (expectedSha256 && downloaded.sha256.toLowerCase() !== expectedSha256.toLowerCase()) {
+        fs.unlinkSync(tempTarget);
+        return {
+          content: [{ type: 'text' as const, text: `Download failed: sha256 mismatch for ${file}` }],
+          structuredContent: { ...downloaded, file },
+          isError: true,
+        };
+      }
+      fs.mkdirSync(path.dirname(target), { recursive: true });
+      fs.renameSync(tempTarget, target);
+      auditFileOperation('cloud.download', root, [{ path: target, before, after: downloaded.sha256 }]);
+      return {
+        content: [{ type: 'text' as const, text: `Downloaded ${downloaded.bytes} bytes to ${file}` }],
+        structuredContent: { file, ...downloaded },
+      };
+    } finally {
+      if (fs.existsSync(tempTarget)) fs.unlinkSync(tempTarget);
+    }
   }));
 
   server.registerTool('file.mkdir', {
@@ -1060,6 +1134,33 @@ export function createMcpServer(config: BridgeConfig): McpServer {
     };
   }));
 
+  server.registerTool('bridge.activity', {
+    title: 'Bridge Activity',
+    description: 'Read recent local bridge tool-call records and audit events. Use this to inspect what ChatGPT actually asked the MCP server to do.',
+    inputSchema: {
+      limit: z.number().int().min(1).max(500).default(100),
+      includeAudit: z.boolean().default(true),
+    },
+    outputSchema: {
+      toolCalls: z.array(z.object(toolCallOutput)),
+      auditEvents: z.array(z.object(auditEventOutput).passthrough()),
+      dataDir: z.string(),
+    },
+    annotations: { readOnlyHint: true, openWorldHint: false },
+  }, withToolLogging('bridge.activity', async ({ limit, includeAudit }) => {
+    const calls = readToolCalls(config, limit);
+    const auditEvents = includeAudit ? readAuditEvents(config, limit) : [];
+    return {
+      content: [{
+        type: 'text' as const,
+        text: calls.length
+          ? calls.map((call) => `${call.ts} ${call.status.padEnd(7)} ${call.tool} ${call.durationMs ?? ''}`).join('\n')
+          : 'No tool calls recorded yet.',
+      }],
+      structuredContent: { toolCalls: calls, auditEvents, dataDir: config.dataDir },
+    };
+  }));
+
   server.registerTool('service.restart', {
     title: 'Restart Bridge Service',
     description: 'Restart one fixed launchd service: bridge or ngrok. Requires confirm=true.',
@@ -1118,13 +1219,46 @@ function withToolLogging<TArgs>(
 ): (args: TArgs) => Promise<any> {
   return async (args: TArgs) => {
     const startedAt = Date.now();
+    const callId = `${startedAt.toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+    const config = activeConfig;
+    if (config) {
+      appendToolCall(config, {
+        id: callId,
+        ts: new Date(startedAt).toISOString(),
+        tool: name,
+        status: 'started',
+        args: sanitizeForLog(args) as Record<string, unknown>,
+      });
+    }
     console.error(`[mcp] tool.start ${name} ${summarizeArgs(args)}`);
     try {
       const result = await handler(args);
+      if (config) {
+        appendToolCall(config, {
+          id: callId,
+          ts: new Date().toISOString(),
+          tool: name,
+          status: 'ok',
+          durationMs: Date.now() - startedAt,
+          args: sanitizeForLog(args) as Record<string, unknown>,
+          result: summarizeToolResult(result),
+        });
+      }
       console.error(`[mcp] tool.done ${name} durationMs=${Date.now() - startedAt}`);
       return result;
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
+      if (config) {
+        appendToolCall(config, {
+          id: callId,
+          ts: new Date().toISOString(),
+          tool: name,
+          status: 'error',
+          durationMs: Date.now() - startedAt,
+          args: sanitizeForLog(args) as Record<string, unknown>,
+          error: message,
+        });
+      }
       console.error(`[mcp] tool.error ${name} durationMs=${Date.now() - startedAt} error=${JSON.stringify(message)}`);
       throw err;
     }
@@ -1343,6 +1477,52 @@ function statProjectPath(root: string, target: string, includeHash: boolean) {
     result.sha256 = createHash('sha256').update(fs.readFileSync(target)).digest('hex');
   }
   return result;
+}
+
+async function downloadToLocalFile(url: string, target: string, maxBytes: number) {
+  const parsed = new URL(url);
+  if (parsed.protocol !== 'https:' && parsed.hostname !== '127.0.0.1' && parsed.hostname !== 'localhost') {
+    throw new Error('cloud.download only accepts HTTPS URLs, except localhost for testing.');
+  }
+
+  const response = await fetch(url, {
+    redirect: 'follow',
+    headers: {
+      'User-Agent': 'ChatGPT2LocalBridge/0.1.0',
+    },
+  });
+  if (!response.ok) {
+    throw new Error(`Download failed: HTTP ${response.status} ${response.statusText}`);
+  }
+  if (!response.body) {
+    throw new Error('Download failed: response body is empty.');
+  }
+
+  const contentLength = response.headers.get('content-length');
+  if (contentLength && Number.parseInt(contentLength, 10) > maxBytes) {
+    throw new Error(`Download too large: ${contentLength} bytes exceeds maxBytes=${maxBytes}`);
+  }
+
+  const chunks: Buffer[] = [];
+  let bytes = 0;
+  for await (const chunk of response.body as unknown as AsyncIterable<Uint8Array>) {
+    const buffer = Buffer.from(chunk);
+    bytes += buffer.length;
+    if (bytes > maxBytes) {
+      throw new Error(`Download too large: exceeded maxBytes=${maxBytes}`);
+    }
+    chunks.push(buffer);
+  }
+
+  const data = Buffer.concat(chunks);
+  fs.mkdirSync(path.dirname(target), { recursive: true });
+  fs.writeFileSync(target, data);
+  return {
+    bytes,
+    sha256: createHash('sha256').update(data).digest('hex'),
+    contentType: response.headers.get('content-type') ?? undefined,
+    sourceUrlHost: parsed.host,
+  };
 }
 
 function listDirectory(root: string, target: string, recursive: boolean, maxEntries: number) {

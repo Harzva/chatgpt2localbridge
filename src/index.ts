@@ -55,6 +55,7 @@ async function main() {
 
   console.error(`[bridge] ChatGPT2LocalBridge v0.1.0 starting`);
   console.error(`[bridge] Data dir: ${config.dataDir}`);
+  if (httpMode) console.error(`[bridge] Local console: http://127.0.0.1:${httpPort}/app`);
 
   if (httpMode) {
     console.error(`[bridge] Mode: MCP Streamable HTTP`);
@@ -98,6 +99,7 @@ function initProject(args: string[]): void {
   const envPath = path.join(cwd, '.env.local');
   const dataDir = path.join(os.homedir(), '.chatgpt2localbridge');
   const unlockCode = randomBytes(24).toString('hex');
+  const dashboardToken = randomBytes(24).toString('hex');
 
   if (!fs.existsSync(workspaceRoot)) {
     throw new Error(`Workspace root does not exist: ${workspaceRoot}`);
@@ -139,6 +141,7 @@ function initProject(args: string[]): void {
     'export LOCALBRIDGE_OAUTH_ENABLED=1',
     `export LOCALBRIDGE_PUBLIC_BASE_URL="${publicUrl}"`,
     `export LOCALBRIDGE_OAUTH_UNLOCK_CODE="${unlockCode}"`,
+    `export LOCALBRIDGE_DASHBOARD_TOKEN="${dashboardToken}"`,
     'export LOCALBRIDGE_ALLOW_URL_TOKEN=0',
     '',
   ].join('\n'), force);
@@ -148,6 +151,7 @@ function initProject(args: string[]): void {
   console.log(`Env:    ${envPath} (contains your local unlock code; do not commit)`);
   console.log('Next:   set -a; source .env.local; set +a');
   console.log('Run:    chatgpt2localbridge --http 3838');
+  console.log('App:    http://127.0.0.1:3838/app');
 }
 
 function optionValue(args: string[], name: string): string | undefined {

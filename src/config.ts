@@ -29,6 +29,10 @@ export interface BridgeConfig {
     codeTtlSeconds: number;
     scopes: string[];
   };
+  /** Local browser console for operators */
+  dashboard: {
+    token?: string;
+  };
   /** Policy controlling filesystem and shell boundaries */
   policy: BridgePolicy;
 }
@@ -55,6 +59,9 @@ export function loadConfig(): BridgeConfig {
     codeTtlSeconds: parsePositiveInt(env('OAUTH_CODE_TTL_SECONDS'), 10 * 60),
     scopes: oauthScopes.length > 0 ? oauthScopes : ['workspace:read', 'workspace:write', 'shell:exec'],
   };
+  const dashboard = {
+    token: env('DASHBOARD_TOKEN') || undefined,
+  };
   const policy = loadPolicy(env('POLICY_PATH'));
 
   return {
@@ -63,6 +70,7 @@ export function loadConfig(): BridgeConfig {
     authToken,
     allowUrlTokenAuth,
     oauth,
+    dashboard,
     policy,
   };
 }

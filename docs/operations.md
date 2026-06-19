@@ -13,6 +13,19 @@ LOCALBRIDGE_POLICY_PATH="$PWD/bridge.policy.json" node dist/index.js --http 3838
 curl -sS http://127.0.0.1:3838/health
 ```
 
+## Local Console
+
+```bash
+open http://127.0.0.1:3838/app
+```
+
+The console APIs require `LOCALBRIDGE_DASHBOARD_TOKEN`.
+
+```bash
+curl -sS -H "x-localbridge-dashboard-token: $LOCALBRIDGE_DASHBOARD_TOKEN" \
+  http://127.0.0.1:3838/app/api/activity
+```
+
 ## OAuth Discovery
 
 ```bash
