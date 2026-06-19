@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.chatgpt2localbridge.bridge</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/zsh</string>
+    <string>-lc</string>
+    <string>cd /ABSOLUTE/PATH/TO/chatgpt2localbridge &amp;&amp; exec /usr/local/bin/node dist/index.js --http 3838</string>
+  </array>
+
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>LOCALBRIDGE_DATA_DIR</key>
+    <string>/Users/YOUR_USERNAME/.chatgpt2localbridge</string>
+    <key>LOCALBRIDGE_LOG_DIR</key>
+    <string>/Users/YOUR_USERNAME/.chatgpt2localbridge/logs</string>
+    <key>LOCALBRIDGE_POLICY_PATH</key>
+    <string>/ABSOLUTE/PATH/TO/chatgpt2localbridge/bridge.policy.json</string>
+    <key>LOCALBRIDGE_OAUTH_ENABLED</key>
+    <string>1</string>
+    <key>LOCALBRIDGE_PUBLIC_BASE_URL</key>
+    <string>https://YOUR-FIXED-DOMAIN.ngrok-free.dev</string>
+    <key>LOCALBRIDGE_OAUTH_UNLOCK_CODE</key>
+    <string>REPLACE_WITH_LONG_RANDOM_CODE</string>
+    <key>LOCALBRIDGE_ALLOW_URL_TOKEN</key>
+    <string>0</string>
+  </dict>
+
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>
+
+  <key>StandardOutPath</key>
+  <string>/Users/YOUR_USERNAME/.chatgpt2localbridge/logs/bridge.out.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Users/YOUR_USERNAME/.chatgpt2localbridge/logs/bridge.err.log</string>
+</dict>
+</plist>

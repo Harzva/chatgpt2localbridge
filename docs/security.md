@@ -1,0 +1,32 @@
+# Security Model
+
+ChatGPT2LocalBridge is powerful because it lets a remote ChatGPT session call local tools. Treat the public URL as a sensitive control surface.
+
+## Boundaries
+
+- File access is limited by `allowedProjectRoots`.
+- Deny globs block common secret files.
+- Shell commands are filtered by deny patterns.
+- Hosted ChatGPT access should use OAuth.
+- The unlock code is local operator authorization, not a public password to share.
+
+## Do Not Commit
+
+- `.env`
+- `bridge.policy.json`
+- OAuth store files
+- API keys
+- cookies
+- tokens
+- unlock codes
+- raw chat logs
+- machine-specific private paths
+
+## Recommended Public Setup
+
+1. Run the bridge only on `127.0.0.1`.
+2. Expose it with a tunnel that provides HTTPS.
+3. Enable OAuth.
+4. Use a long random `LOCALBRIDGE_OAUTH_UNLOCK_CODE`.
+5. Keep `LOCALBRIDGE_ALLOW_URL_TOKEN=0`.
+6. Keep `allowedProjectRoots` narrow.

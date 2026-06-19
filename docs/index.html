@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ChatGPT2LocalBridge</title>
+  <meta name="description" content="OAuth MCP Connector for approved local files.">
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+  <div class="site-shell">
+    <nav class="nav">
+      <a class="brand" href="./index.html">
+        <img src="./assets/logo.png" alt="ChatGPT2LocalBridge logo">
+        <span>ChatGPT2LocalBridge</span>
+      </a>
+      <div class="nav-links">
+        <a href="./quickstart.html">Quickstart</a>
+        <a href="./showcase.html">Showcase</a>
+        <a href="./human-tutorial.html">Human Tutorial</a>
+        <a href="./agent-computer-use.html">Agent Tutorial</a>
+        <a href="./alternatives.html">Alternatives</a>
+        <a href="https://github.com/harzva/chatgpt2localbridge">GitHub</a>
+      </div>
+    </nav>
+
+    <main>
+      <section class="hero">
+        <div>
+          <div class="eyebrow">OAuth MCP Connector for local workspaces</div>
+          <h1>Let ChatGPT work with approved local files.</h1>
+          <p class="lede">Run a local MCP bridge on your Mac, authorize ChatGPT through OAuth, and keep the filesystem boundary under your control.</p>
+          <div class="actions">
+            <a class="button primary" href="./quickstart.html">Start in 5 minutes</a>
+            <a class="button" href="./human-tutorial.html">See the walkthrough</a>
+          </div>
+        </div>
+        <figure class="hero-art">
+          <img src="./assets/cover.png" alt="ChatGPT2LocalBridge route diagram">
+        </figure>
+      </section>
+
+      <section class="section">
+        <h2>The Route</h2>
+        <div class="route">
+          <div class="node">ChatGPT</div>
+          <div class="node">OAuth Connector</div>
+          <div class="node">HTTPS Tunnel</div>
+          <div class="node">localhost:3838</div>
+          <div class="node">Local MCP</div>
+          <div class="node">Approved Workspace</div>
+        </div>
+      </section>
+
+      <section class="section">
+        <h2>Why It Exists</h2>
+        <div class="grid">
+          <article class="card">
+            <h3>Local-first</h3>
+            <p>Your files stay on your computer. ChatGPT calls tools only after authorization.</p>
+          </article>
+          <article class="card">
+            <h3>OAuth-ready</h3>
+            <p>Supports discovery metadata, Dynamic Client Registration, PKCE, and bearer tokens.</p>
+          </article>
+          <article class="card">
+            <h3>Operator-friendly</h3>
+            <p>Use a fixed HTTPS tunnel and launchd to keep the bridge alive for long-running work.</p>
+          </article>
+        </div>
+      </section>
+    </main>
+
+    <footer class="footer">Unofficial project. Not affiliated with OpenAI.</footer>
+  </div>
+</body>
+</html>

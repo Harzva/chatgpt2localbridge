@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Agent Computer Use Tutorial - ChatGPT2LocalBridge</title>
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+  <nav class="nav">
+    <a class="brand" href="./index.html"><img src="./assets/logo.png" alt="">ChatGPT2LocalBridge</a>
+    <div class="nav-links"><a href="./quickstart.html">Quickstart</a><a href="./showcase.html">Showcase</a><a href="./human-tutorial.html">Human Tutorial</a><a href="./alternatives.html">Alternatives</a></div>
+  </nav>
+  <main class="section">
+    <h1>Agent + Computer Use Tutorial</h1>
+    <p class="lede">This guide is for advanced users who want a local coding agent to help configure the ChatGPT connector UI. The human operator still owns all secrets and final authorization.</p>
+
+    <h2>Operator rules for agents</h2>
+    <div class="grid">
+      <article class="card"><h3>Do not reveal secrets</h3><p>The agent may paste from local clipboard or guide the operator, but it must not print unlock codes or tokens into chat.</p></article>
+      <article class="card"><h3>Stop at safety interstitials</h3><p>If the browser asks the human to trust a tunnel or site, the agent should pause and ask the human to click.</p></article>
+      <article class="card"><h3>Verify after setup</h3><p>The agent should test `/health`, OAuth metadata, and a minimal `file.list` call after authorization.</p></article>
+    </div>
+
+    <h2>Suggested agent prompt</h2>
+    <pre class="code"><code>You are configuring ChatGPT2LocalBridge with Computer Use.
+1. Verify local health at http://127.0.0.1:3838/health.
+2. Verify OAuth metadata at the public tunnel URL.
+3. Open ChatGPT connector settings.
+4. Create a custom connector named ChatGPT2LocalBridge.
+5. Use URL https://YOUR-DOMAIN/mcp and OAuth.
+6. If the OAuth page asks for an unlock code, ask the human operator to provide or approve it.
+7. Never print tokens or unlock codes.
+8. After linking, send a minimal file.list test inside the approved workspace.</code></pre>
+
+    <div class="screens"><img src="./assets/screenshots/08-agent-computer-use.png" alt="Agent Computer Use setup screenshot"></div>
+  </main>
+</body>
+</html>

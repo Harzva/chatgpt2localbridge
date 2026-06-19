@@ -1,0 +1,57 @@
+{
+  "name": "chatgpt2localbridge",
+  "version": "0.1.0",
+  "description": "OAuth-enabled MCP connector that lets ChatGPT access approved local workspaces.",
+  "type": "module",
+  "main": "dist/index.js",
+  "bin": {
+    "chatgpt2localbridge": "dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsx src/index.ts",
+    "start": "node dist/index.js",
+    "start:http": "node dist/index.js --http 3838",
+    "typecheck": "tsc --noEmit",
+    "test": "bash scripts/test-mcp.sh",
+    "docs:assets": "node scripts/render-doc-assets.mjs",
+    "docs:preview": "python3 -m http.server 4178 --directory docs --bind 127.0.0.1",
+    "prepare": "npm run build",
+    "prepack": "npm run build"
+  },
+  "files": [
+    "assets",
+    "bridge.policy.example.json",
+    ".env.example",
+    "dist",
+    "docs",
+    "launchd",
+    "scripts",
+    "src",
+    "README.md",
+    "LICENSE"
+  ],
+  "keywords": [
+    "mcp",
+    "chatgpt",
+    "connector",
+    "oauth",
+    "local-files",
+    "workspace",
+    "ngrok",
+    "macos"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "zod": "^3.23.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.19.21",
+    "tsx": "4.19",
+    "typescript": "5.7"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}

@@ -1,0 +1,14 @@
+node_modules/
+dist/
+.DS_Store
+.env
+.env.*
+!.env.example
+*.log
+logs/
+tmp/
+coverage/
+bridge.policy.json
+providers.local.json
+.chatgpt2localbridge/
+oauth/store.json

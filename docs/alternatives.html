@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Alternatives - ChatGPT2LocalBridge</title>
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+  <nav class="nav">
+    <a class="brand" href="./index.html"><img src="./assets/logo.png" alt="">ChatGPT2LocalBridge</a>
+    <div class="nav-links"><a href="./quickstart.html">Quickstart</a><a href="./showcase.html">Showcase</a><a href="./human-tutorial.html">Human Tutorial</a><a href="./agent-computer-use.html">Agent Tutorial</a></div>
+  </nav>
+  <main class="section">
+    <h1>OAuth and Tunnel Alternatives</h1>
+    <div class="grid">
+      <article class="card"><h3>OAuth with DCR</h3><p>Best fit for ChatGPT Custom Connectors that dynamically register clients. Supports discovery, PKCE, token exchange, and unlink-based revocation.</p></article>
+      <article class="card"><h3>OAuth with CIMD</h3><p>Uses a client ID metadata document instead of dynamic client registration state. Good when the connector supports stable metadata documents.</p></article>
+      <article class="card"><h3>Static bearer token</h3><p>Simpler, but harder to rotate and often unsupported by hosted connector UIs unless they expose API-key headers.</p></article>
+      <article class="card"><h3>No auth</h3><p>Only acceptable for loopback-only experiments. Never use it on a public tunnel.</p></article>
+      <article class="card"><h3>ChatGPT Actions</h3><p>Useful for REST APIs that do not need MCP tools. It is a different product surface from a remote MCP server.</p></article>
+    </div>
+    <h2>Tunnel options</h2>
+    <div class="grid">
+      <article class="card"><h3>ngrok</h3><p>Fastest setup with account-owned development domains or custom domains. Good for prototypes and small teams.</p></article>
+      <article class="card"><h3>Cloudflare Tunnel</h3><p>Good for custom domains and long-running services. `cloudflared` makes outbound connections and can pair with Access.</p></article>
+      <article class="card"><h3>OpenAI Secure MCP Tunnel</h3><p>Private-by-default path when available to your OpenAI workspace. In ChatGPT, choose Tunnel instead of a public server URL.</p></article>
+    </div>
+  </main>
+</body>
+</html>

@@ -1,0 +1,60 @@
+{
+  "projectName": "ChatGPT2LocalBridge",
+  "root": ".",
+  "type": "static-html",
+  "installCommand": "npm install",
+  "startCommand": "python3 -m http.server 4178 --directory docs --bind 127.0.0.1",
+  "baseUrl": "http://127.0.0.1:4178",
+  "outputDir": "docs/assets",
+  "readme": "README.md",
+  "waitMs": 800,
+  "timeoutMs": 60000,
+  "disableAnimations": true,
+  "viewports": {
+    "desktop": { "width": 1440, "height": 1000 },
+    "mobile": { "width": 390, "height": 900 }
+  },
+  "screenshots": [
+    {
+      "id": "home-desktop",
+      "title": "GitHub Pages home",
+      "path": "/index.html",
+      "viewport": "desktop",
+      "fullPage": false
+    },
+    {
+      "id": "home-mobile",
+      "title": "GitHub Pages mobile",
+      "path": "/index.html",
+      "viewport": "mobile",
+      "fullPage": false
+    },
+    {
+      "id": "human-tutorial",
+      "title": "Human tutorial",
+      "path": "/human-tutorial.html",
+      "viewport": "desktop",
+      "fullPage": false
+    },
+    {
+      "id": "agent-tutorial",
+      "title": "Agent Computer Use tutorial",
+      "path": "/agent-computer-use.html",
+      "viewport": "desktop",
+      "fullPage": false
+    },
+    {
+      "id": "showcase-gallery",
+      "title": "Visual showcase gallery",
+      "path": "/showcase.html",
+      "viewport": "desktop",
+      "fullPage": false
+    }
+  ],
+  "motions": [],
+  "hero": {
+    "title": "ChatGPT2LocalBridge",
+    "subtitle": "OAuth MCP Connector for approved local files",
+    "layout": "desktop-mobile"
+  }
+}

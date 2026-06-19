@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Quickstart - ChatGPT2LocalBridge</title>
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+  <nav class="nav">
+    <a class="brand" href="./index.html"><img src="./assets/logo.png" alt="">ChatGPT2LocalBridge</a>
+    <div class="nav-links"><a href="./showcase.html">Showcase</a><a href="./human-tutorial.html">Human Tutorial</a><a href="./agent-computer-use.html">Agent Tutorial</a><a href="./alternatives.html">Alternatives</a></div>
+  </nav>
+  <main class="section">
+    <h1>Quickstart</h1>
+    <p class="lede">The shortest path is clone or npx, initialize a local policy, run the HTTP MCP server, then create a ChatGPT Custom Connector.</p>
+    <h2>Option A: npx from GitHub</h2>
+    <pre class="code"><code>npx github:harzva/chatgpt2localbridge init --root ~/Projects
+set -a; source .env.local; set +a
+npx github:harzva/chatgpt2localbridge --http 3838</code></pre>
+    <h2>Option B: clone and run</h2>
+    <pre class="code"><code>git clone https://github.com/harzva/chatgpt2localbridge.git
+cd chatgpt2localbridge
+npm install
+npm run build
+node dist/index.js init --root ~/Projects
+set -a; source .env.local; set +a
+node dist/index.js --http 3838</code></pre>
+    <h2>Health check</h2>
+    <pre class="code"><code>curl -sS http://127.0.0.1:3838/health</code></pre>
+  </main>
+</body>
+</html>
