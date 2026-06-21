@@ -51,6 +51,18 @@ an OAuth custom connector. The useful troubleshooting finding was:
 - Write behavior is separately verified by
   [`CHATGPT_WRITE_TEST.md`](./CHATGPT_WRITE_TEST.md), a harmless Markdown file
   created through the connector flow.
+- A `shell.exec` attempt that included risky command wording was blocked by the
+  bridge safety policy. The plan was rewritten as plain text and then saved as a
+  local TXT artifact. This is expected behavior and is useful evidence that the
+  bridge is not a raw unrestricted command proxy.
+
+## Community Todo
+
+- Linux packaging and deployment need more field testing.
+- Linux connector profiles should stay separate from macOS profiles so each
+  machine keeps a narrow policy.
+- Contributions and PRs are welcome, especially for Linux service installers,
+  Cloudflare Tunnel examples, systemd hardening, and distro-specific docs.
 
 ## Known Field Notes
 
@@ -69,3 +81,4 @@ an OAuth custom connector. The useful troubleshooting finding was:
 - `question/understanding.md`: public troubleshooting explanation of why write
   tools were missing before the profile update.
 - `docs/assets/xhs-promo.png`: shareable Xiaohongshu-style product card.
+- `docs/assets/xhs-community.png`: shareable community/PR card with Linux todo.
