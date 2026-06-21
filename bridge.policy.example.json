@@ -2,6 +2,9 @@
   "allowedProjectRoots": [
     "/Users/YOUR_USERNAME/Projects"
   ],
+  "skillRoots": [
+    "/Users/YOUR_USERNAME/.codex/skills"
+  ],
   "denyGlobs": [
     "**/.env",
     "**/.env.*",

@@ -1,0 +1,27 @@
+<!doctype html><html><head><meta charset="utf-8"><style>
+  *{box-sizing:border-box}body{margin:0;width:1600px;height:900px;background:#edf4fb;font-family:Inter,Arial,sans-serif;color:#17202a;display:grid;place-items:center}
+  .canvas{width:1460px;height:800px;background:#fff;border:1px solid #d8e1ec;border-radius:28px;box-shadow:0 34px 90px rgba(18,31,56,.16);padding:30px 38px;position:relative;overflow:hidden}
+  .top{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:22px}
+  .kicker{font-size:17px;line-height:1.2;font-weight:900;color:#1769e0;text-transform:uppercase;letter-spacing:.08em}.title{font-size:44px;line-height:1.02;font-weight:900;letter-spacing:0;margin-top:8px}.subtitle{font-size:21px;line-height:1.32;color:#526070;margin-top:10px;max-width:850px}
+  .badge{border-radius:999px;background:#e9f3ff;color:#1769e0;border:1px solid #cfe2ff;padding:12px 18px;font-size:18px;font-weight:900;white-space:nowrap}
+  .flow{display:grid;grid-template-columns:205px 205px 205px 260px 280px;gap:26px;align-items:stretch;margin-top:14px}
+  .card{min-height:170px;border:2px solid #d8e1ec;border-radius:22px;background:#fbfdff;padding:18px 20px;position:relative}
+  .card.primary{border-color:#1769e0;background:#f7fbff}.card.safe{border-color:#30b37d;background:#f5fffa}.card.warn{border-color:#f7b733;background:#fffaf0}
+  .label{font-size:15px;font-weight:900;color:#64748b;text-transform:uppercase;letter-spacing:.06em}.name{font-size:27px;font-weight:900;line-height:1.05;margin-top:8px}.desc{font-size:16px;line-height:1.28;color:#526070;margin-top:10px}.mini{font-size:15px;line-height:1.45;color:#64748b;margin-top:12px}
+  .arrow{position:absolute;right:-27px;top:72px;width:28px;height:16px;color:#1769e0;font-size:36px;font-weight:900;z-index:2}
+  .tiers{display:grid;grid-template-rows:1fr 1fr 1fr;gap:9px;margin-top:8px}.tier{border-radius:16px;padding:10px 14px;border:1px solid #dbe6f3;background:#fff}.tier strong{display:block;font-size:17px;line-height:1.1}.tier span{display:block;font-size:13px;line-height:1.2;color:#526070;margin-top:4px}.tier.high{border-color:#b9f0d3;background:#f5fffa}.tier.mid{border-color:#bcd7ff;background:#f7fbff}.tier.low{border-color:#ffe0a6;background:#fffaf0}
+  .bottom{display:grid;grid-template-columns:1fr 1fr 1fr;gap:22px;margin-top:24px}
+  .panel{border-radius:20px;border:1px solid #d8e1ec;background:#fbfdff;padding:18px 22px;min-height:225px}.panel h3{font-size:22px;line-height:1.1;margin:0 0 10px}.panel p{font-size:17px;line-height:1.35;color:#526070;margin:0}.dots{display:flex;gap:10px;margin-top:16px}.dot{height:10px;flex:1;border-radius:999px;background:#1769e0}.dot:nth-child(2){background:#30b37d}.dot:nth-child(3){background:#f7b733}.dot:nth-child(4){background:#ef4444}
+  </style></head><body><main class="canvas"><div class="top"><div><div class="kicker">Architecture</div><div class="title">ChatGPT to local workspace control plane</div><div class="subtitle">Web ChatGPT calls MCP tools, the bridge enforces policy, and the local app keeps the operator in the loop with traces, logs, and task controls.</div></div><div class="badge">OAuth or Secure MCP Tunnel first</div></div>
+  <section class="flow">
+    <div class="card"><div class="label">User intent</div><div class="name">ChatGPT Web</div><div class="desc">The user asks for local project inspection, edits, tests, downloads, or a Codex CLI task.</div><div class="arrow">→</div></div>
+    <div class="card primary"><div class="label">Connector</div><div class="name">MCP tools</div><div class="desc">ChatGPT discovers tools from <strong>tools/list</strong> and makes structured <strong>mcp_call</strong> requests.</div><div class="arrow">→</div></div>
+    <div class="card safe"><div class="label">Access</div><div class="name">Auth tunnel</div><div class="desc">OAuth or Secure MCP Tunnel protects public deployments. No-auth stays lab-only.</div><div class="arrow">→</div></div>
+    <div class="card primary"><div class="label">Bridge core</div><div class="name">Policy gateway</div><div class="desc">Allowed roots, deny globs, shell profile, timeouts, and audit logging guard every call.</div><div class="arrow">→</div></div>
+    <div class="card warn"><div class="label">Local side</div><div class="name">Workspace + Codex</div><div class="desc">Approved files, local skills, test commands, and Codex CLI jobs run beside the project.</div></div>
+  </section>
+  <section class="bottom">
+    <div class="panel"><h3>Tool tiers</h3><div class="tiers"><div class="tier high"><strong>High: codex.*</strong><span>task_start, status, result</span></div><div class="tier mid"><strong>Mid: project/git/test</strong><span>bundle, diff, run, policy</span></div><div class="tier low"><strong>Low: debug only</strong><span>file.write, shell.exec</span></div></div></div>
+    <div class="panel"><h3>Operator app</h3><p>Policy Center edits roots safely. Trace views show tool calls, file reads/writes, cloud downloads, logs, diffs, and cancellable Codex tasks.</p><div class="dots"><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="dot"></span></div></div>
+    <div class="panel"><h3>Safety defaults</h3><p>Public URLs require OAuth or a private tunnel. Normal mode avoids raw shell and guides ChatGPT toward project.bundle, test.run, git.diff, and Codex Runner.</p><div class="dots"><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="dot"></span></div></div>
+  </section></main></body></html>

@@ -1,0 +1,1495 @@
+{
+  "generatedAt": "2026-06-21T05:28:30.530Z",
+  "source": "MCP tools/list",
+  "count": 48,
+  "tools": [
+    {
+      "name": "bridge.activity",
+      "title": "Bridge Activity",
+      "description": "Read recent local bridge tool-call records and audit events. Use this to inspect what ChatGPT actually asked the MCP server to do.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 500,
+            "default": 100
+          },
+          "includeAudit": {
+            "type": "boolean",
+            "default": true
+          }
+        },
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "bridge.health",
+      "title": "Bridge Health",
+      "description": "Check local and optional public bridge health endpoints.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "includePublic": {
+            "type": "boolean",
+            "default": true
+          },
+          "publicBaseUrl": {
+            "type": "string",
+            "format": "uri",
+            "default": "https://example.ngrok-free.app"
+          },
+          "timeoutMs": {
+            "type": "integer",
+            "minimum": 500,
+            "maximum": 10000,
+            "default": 5000
+          }
+        },
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "bridge.logs",
+      "title": "Bridge Logs",
+      "description": "Read recent bridge and tunnel log lines from the configured log directory.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "files": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "bridge.err.log",
+                "bridge.out.log",
+                "ngrok.log"
+              ]
+            },
+            "default": [
+              "bridge.err.log",
+              "ngrok.log"
+            ]
+          },
+          "lines": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 500,
+            "default": 100
+          }
+        },
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "bridge.status",
+      "title": "Bridge Status",
+      "description": "Return local bridge and tunnel launchd service status.",
+      "inputSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "type": "object",
+        "properties": {}
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "cloud.download",
+      "title": "Download Cloud File",
+      "description": "Download a ChatGPT/App-provided HTTPS file URL into an approved local workspace. Use this when a cloud-side file has a download link and should be synced to local disk.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "projectPath": {
+            "type": "string"
+          },
+          "url": {
+            "type": "string",
+            "format": "uri"
+          },
+          "file": {
+            "type": "string"
+          },
+          "overwrite": {
+            "type": "boolean",
+            "default": false
+          },
+          "maxBytes": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 104857600,
+            "default": 52428800
+          },
+          "expectedSha256": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          }
+        },
+        "required": [
+          "projectPath",
+          "url",
+          "file"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "code.read",
+      "title": "Read Files",
+      "description": "Read one or more text files from a local project. If the user provides absolute local paths like /home/... or /Users/..., prefer file.read_path or file_read_path instead.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "projectPath": {
+            "type": "string"
+          },
+          "files": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "minItems": 1
+          },
+          "maxLines": {
+            "type": "integer",
+            "minimum": 10,
+            "maximum": 5000,
+            "default": 1000
+          }
+        },
+        "required": [
+          "projectPath",
+          "files"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "code.read_range",
+      "title": "Read File Range",
+      "description": "Read a bounded line range from one text file inside a project.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "projectPath": {
+            "type": "string"
+          },
+          "file": {
+            "type": "string"
+          },
+          "startLine": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "endLine": {
+            "type": "integer",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "projectPath",
+          "file",
+          "startLine",
+          "endLine"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "code.search",
+      "title": "Search Code",
+      "description": "Search local project files with ripgrep-compatible output.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "projectPath": {
+            "type": "string"
+          },
+          "query": {
+            "type": "string"
+          },
+          "glob": {
+            "type": "string"
+          },
+          "maxResults": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 500,
+            "default": 100
+          }
+        },
+        "required": [
+          "projectPath",
+          "query"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "file_read_path",
+      "title": "Read Absolute Local Paths",
+      "description": "Compatibility alias for file.read_path. Read one or more absolute text file paths from approved local/Linux/Mac workspace roots. Use this when ChatGPT asks for file_read_path or when dotted MCP tool names are not available in the current client.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "paths": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "minItems": 1,
+            "maxItems": 20,
+            "description": "Absolute local file paths to read. Each path must be inside bridge.policy allowedProjectRoots."
+          },
+          "maxLines": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 5000,
+            "default": 1000
+          }
+        },
+        "required": [
+          "paths"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "file.copy",
+      "title": "Copy File",
+      "description": "Copy a file inside a project.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "projectPath": {
+            "type": "string"
+          },
+          "from": {
+            "type": "string"
+          },
+          "to": {
+            "type": "string"
+          },
+          "overwrite": {
+            "type": "boolean",
+            "default": false
+          }
+        },
+        "required": [
+          "projectPath",
+          "from",
+          "to"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "file.delete",
+      "title": "Delete File",
+      "description": "Delete a file inside a project.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "projectPath": {
+            "type": "string"
+          },
+          "file": {
+            "type": "string"
+          },
+          "confirm": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "projectPath",
+          "file",
+          "confirm"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "file.list",
+      "title": "List Directory",
+      "description": "List files and directories inside a project directory without reading file contents.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "projectPath": {
+            "type": "string"
+          },
+          "dir": {
+            "type": "string",
+            "default": "."
+          },
+          "recursive": {
+            "type": "boolean",
+            "default": false
+          },
+          "maxEntries": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 200
+          }
+        },
+        "required": [
+          "projectPath"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "file.mkdir",
+      "title": "Create Directory",
+      "description": "Create a directory inside a project.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "projectPath": {
+            "type": "string"
+          },
+          "dir": {
+            "type": "string"
+          },
+          "recursive": {
+            "type": "boolean",
+            "default": true
+          }
+        },
+        "required": [
+          "projectPath",
+          "dir"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "file.move",
+      "title": "Move File",
+      "description": "Move or rename a file or directory inside a project.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "projectPath": {
+            "type": "string"
+          },
+          "from": {
+            "type": "string"
+          },
+          "to": {
+            "type": "string"
+          },
+          "overwrite": {
+            "type": "boolean",
+            "default": false
+          }
+        },
+        "required": [
+          "projectPath",
+          "from",
+          "to"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "file.patch",
+      "title": "Patch File",
+      "description": "Replace exact text inside a file. Fails unless the old text is found exactly once, unless replaceAll is true.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "projectPath": {
+            "type": "string"
+          },
+          "file": {
+            "type": "string"
+          },
+          "oldText": {
+            "type": "string"
+          },
+          "newText": {
+            "type": "string"
+          },
+          "replaceAll": {
+            "type": "boolean",
+            "default": false
+          }
+        },
+        "required": [
+          "projectPath",
+          "file",
+          "oldText",
+          "newText"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "file.read_path",
+      "title": "Read Absolute Local Paths",
+      "description": "Read one or more absolute text file paths from approved local/Linux/Mac workspace roots. Use this whenever the user gives a full local path such as /home/user/project/file.py or /Users/alex/project/file.md; do not use cloud Python or a sandbox shell to check these local paths.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "paths": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "minItems": 1,
+            "maxItems": 20,
+            "description": "Absolute local file paths to read. Each path must be inside bridge.policy allowedProjectRoots."
+          },
+          "maxLines": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 5000,
+            "default": 1000
+          }
+        },
+        "required": [
+          "paths"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "file.stat",
+      "title": "File Stat",
+      "description": "Return metadata for a file or directory inside a project, optionally including sha256 for files.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "projectPath": {
+            "type": "string"
+          },
+          "file": {
+            "type": "string"
+          },
+          "includeHash": {
+            "type": "boolean",
+            "default": false
+          }
+        },
+        "required": [
+          "projectPath",
+          "file"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "file.write",
+      "title": "Write File",
+      "description": "Create or overwrite a text file inside a project. Use code.read first when modifying an existing file.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "projectPath": {
+            "type": "string"
+          },
+          "file": {
+            "type": "string"
+          },
+          "content": {
+            "type": "string"
+          },
+          "createDirs": {
+            "type": "boolean",
+            "default": true
+          }
+        },
+        "required": [
+          "projectPath",
+          "file",
+          "content"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "git.checkpoint",
+      "title": "Git Checkpoint",
+      "description": "Return the current HEAD commit. Use this before a risky edit so git.revert can restore the working tree to this commit.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "projectPath": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "projectPath"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "git.diff",
+      "title": "Git Diff",
+      "description": "Return git diff summary and structured diff for the current working tree.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "projectPath": {
+            "type": "string"
+          },
+          "ref": {
+            "type": "string",
+            "description": "Optional git ref to diff against. Defaults to HEAD."
+          }
+        },
+        "required": [
+          "projectPath"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "git.revert",
+      "title": "Git Revert Working Tree",
+      "description": "Destructive: restore tracked files to a checkpoint and optionally remove untracked files.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "projectPath": {
+            "type": "string"
+          },
+          "checkpoint": {
+            "type": "string"
+          },
+          "cleanUntracked": {
+            "type": "boolean",
+            "default": false
+          },
+          "confirm": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "projectPath",
+          "checkpoint",
+          "confirm"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "git.status",
+      "title": "Git Status",
+      "description": "Return git branch, HEAD, and porcelain status for a project.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "projectPath": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "projectPath"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "policy.read",
+      "title": "Read Bridge Policy",
+      "description": "Read the active local safety policy: approved workspace roots, skill roots, denied file globs, and shell rules.",
+      "inputSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "type": "object",
+        "properties": {}
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "policy.validate",
+      "title": "Validate Bridge Policy",
+      "description": "Validate a proposed policy before saving it in the native app or bridge.policy.json. This tool does not write files.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "allowedProjectRoots": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "default": []
+          },
+          "skillRoots": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "default": []
+          },
+          "denyGlobs": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "default": []
+          },
+          "shell": {
+            "type": "object",
+            "properties": {
+              "enabled": {
+                "type": "boolean",
+                "default": true
+              },
+              "denyPatterns": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "default": []
+              }
+            },
+            "additionalProperties": false,
+            "default": {
+              "enabled": true,
+              "denyPatterns": []
+            }
+          }
+        },
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "port.check",
+      "title": "Check Port",
+      "description": "Check whether a local TCP port is listening and identify the owning process when possible.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "port": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 65535
+          },
+          "host": {
+            "type": "string",
+            "default": "127.0.0.1"
+          }
+        },
+        "required": [
+          "port"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "process.list",
+      "title": "List Project Processes",
+      "description": "List processes started by this bridge runtime.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "workspace": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "process.start",
+      "title": "Start Project Process",
+      "description": "Start a long-running project process and persist its pid/log path.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "projectPath": {
+            "type": "string"
+          },
+          "command": {
+            "type": "string"
+          },
+          "workspace": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "projectPath",
+          "command"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "process.stop",
+      "title": "Stop Project Process",
+      "description": "Stop a process previously started by process.start. Requires confirm=true.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "processId": {
+            "type": "string"
+          },
+          "confirm": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "processId",
+          "confirm"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "project.bundle",
+      "title": "Bundle Project Context",
+      "description": "Read a local directory summary, selected text files, and optional git diff in one call. Use this when the user wants several local files inspected or copied into a cloud-side downloadable artifact: read local first with this tool, then generate the downloadable copy from the returned content.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "projectPath": {
+            "type": "string"
+          },
+          "dir": {
+            "type": "string",
+            "default": "."
+          },
+          "files": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 40,
+            "default": []
+          },
+          "includeDirectorySummary": {
+            "type": "boolean",
+            "default": true
+          },
+          "recursive": {
+            "type": "boolean",
+            "default": false
+          },
+          "maxEntries": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 120
+          },
+          "maxFileBytes": {
+            "type": "integer",
+            "minimum": 100,
+            "maximum": 2097152,
+            "default": 120000
+          },
+          "maxTotalBytes": {
+            "type": "integer",
+            "minimum": 1000,
+            "maximum": 4194304,
+            "default": 750000
+          },
+          "includeGitDiff": {
+            "type": "boolean",
+            "default": false
+          }
+        },
+        "required": [
+          "projectPath"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "project.index",
+      "title": "Project Index",
+      "description": "Return a higher-level project index: package scripts, key files, detected tests, and top-level structure.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "projectPath": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "projectPath"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "project.scripts",
+      "title": "Project Package Scripts",
+      "description": "Return scripts from package.json for a Node project.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "projectPath": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "projectPath"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "project.snapshot",
+      "title": "Project Snapshot",
+      "description": "Get local project context: git state, language, package manager, and a bounded file tree. Use this before editing a project.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "Absolute path to the project directory"
+          },
+          "maxDepth": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 10,
+            "default": 3
+          }
+        },
+        "required": [
+          "path"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "service.restart",
+      "title": "Restart Bridge Service",
+      "description": "Restart one fixed launchd service: bridge or ngrok. Requires confirm=true.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "service": {
+            "type": "string",
+            "enum": [
+              "bridge",
+              "ngrok"
+            ]
+          },
+          "confirm": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "service",
+          "confirm"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "shell.exec",
+      "title": "Run Shell Command",
+      "description": "Run a shell command in the project directory and return stdout/stderr. Use for tests, builds, and local inspection.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "projectPath": {
+            "type": "string"
+          },
+          "command": {
+            "type": "string"
+          },
+          "timeoutMs": {
+            "type": "integer",
+            "minimum": 1000,
+            "maximum": 120000,
+            "default": 30000
+          },
+          "maxOutputBytes": {
+            "type": "integer",
+            "minimum": 1000,
+            "maximum": 1000000,
+            "default": 200000
+          }
+        },
+        "required": [
+          "projectPath",
+          "command"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "skill.bundle",
+      "title": "Bundle Local Skill",
+      "description": "Bundle a local SKILL.md with directly referenced local text files such as references/*.md. Use this when a task needs the whole local skill context.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "skill": {
+            "type": "string",
+            "minLength": 1
+          },
+          "skillRoot": {
+            "type": "string"
+          },
+          "includeReferences": {
+            "type": "boolean",
+            "default": true
+          },
+          "maxReferenceFiles": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 40,
+            "default": 12
+          },
+          "maxBytes": {
+            "type": "integer",
+            "minimum": 1000,
+            "maximum": 2097152,
+            "default": 250000
+          }
+        },
+        "required": [
+          "skill"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "skill.list",
+      "title": "List Local Skills",
+      "description": "List SKILL.md files from approved skill roots. Defaults to ~/.codex/skills when available.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "skillRoot": {
+            "type": "string"
+          },
+          "maxResults": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 200
+          }
+        },
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "skill.read",
+      "title": "Read Local Skill",
+      "description": "Read one approved local SKILL.md file. Use this before following a local Codex skill from ChatGPT.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "skill": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Skill id, name, relative directory, or relative path to SKILL.md"
+          },
+          "skillRoot": {
+            "type": "string"
+          },
+          "maxBytes": {
+            "type": "integer",
+            "minimum": 1000,
+            "maximum": 524288,
+            "default": 120000
+          }
+        },
+        "required": [
+          "skill"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "skill.route",
+      "title": "Route Task To Local Skills",
+      "description": "Recommend local skills for a task and return a short follow-up prompt for reading or bundling them.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "task": {
+            "type": "string",
+            "minLength": 1
+          },
+          "skillRoot": {
+            "type": "string"
+          },
+          "maxResults": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 10,
+            "default": 5
+          }
+        },
+        "required": [
+          "task"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "skill.search",
+      "title": "Search Local Skills",
+      "description": "Search approved local SKILL.md files by name, description, path, and content preview.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "minLength": 1
+          },
+          "skillRoot": {
+            "type": "string"
+          },
+          "maxResults": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 20
+          }
+        },
+        "required": [
+          "query"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "task.finish",
+      "title": "Finish Task",
+      "description": "Mark a persisted task/session as done or blocked.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "taskId": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "done",
+              "blocked"
+            ],
+            "default": "done"
+          },
+          "note": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "taskId"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "task.note",
+      "title": "Add Task Note",
+      "description": "Append a note to a persisted task/session.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "taskId": {
+            "type": "string"
+          },
+          "note": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "taskId",
+          "note"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "task.start",
+      "title": "Start Task",
+      "description": "Start a lightweight persisted task/session record for multi-step work.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string"
+          },
+          "workspace": {
+            "type": "string"
+          },
+          "projectPath": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "title"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "task.status",
+      "title": "Task Status",
+      "description": "Read one task or list recent task/session records.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "taskId": {
+            "type": "string"
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 20
+          }
+        },
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "test.detect",
+      "title": "Detect Test Commands",
+      "description": "Detect likely project test commands without running them.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "projectPath": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "projectPath"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "test.run",
+      "title": "Run Tests",
+      "description": "Run a detected or explicit test command in a project directory.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "projectPath": {
+            "type": "string"
+          },
+          "command": {
+            "type": "string"
+          },
+          "timeoutMs": {
+            "type": "integer",
+            "minimum": 1000,
+            "maximum": 120000,
+            "default": 60000
+          },
+          "maxOutputBytes": {
+            "type": "integer",
+            "minimum": 1000,
+            "maximum": 1000000,
+            "default": 200000
+          }
+        },
+        "required": [
+          "projectPath"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "workspace.add",
+      "title": "Add Workspace",
+      "description": "Register a local project path with a short workspace name.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "pattern": "^[a-zA-Z0-9_.-]+$"
+          },
+          "projectPath": {
+            "type": "string"
+          },
+          "makeDefault": {
+            "type": "boolean",
+            "default": false
+          }
+        },
+        "required": [
+          "name",
+          "projectPath"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "workspace.list",
+      "title": "List Workspaces",
+      "description": "List registered local workspaces.",
+      "inputSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "type": "object",
+        "properties": {}
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "workspace.resolve",
+      "title": "Resolve Workspace",
+      "description": "Resolve a workspace name to its project path. If name is omitted, resolves the default workspace.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "openWorldHint": false
+      }
+    }
+  ]
+}

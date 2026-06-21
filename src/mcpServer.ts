@@ -7,7 +7,7 @@ import os from 'node:os';
 import { execFileSync, exec, spawn } from 'node:child_process';
 import { promisify } from 'node:util';
 import { createHash } from 'node:crypto';
-import type { BridgeConfig } from './config.js';
+import type { BridgeConfig, BridgePolicy } from './config.js';
 import { snapshotProject } from './project.js';
 import { getRawDiff, getChangedFiles, parseUnifiedDiff } from './diffEngine.js';
 import {
@@ -22,6 +22,7 @@ const execAsync = promisify(exec);
 
 const MAX_FILE_BYTES = 2 * 1024 * 1024;
 const MAX_OUTPUT_BYTES = 200_000;
+const MAX_SKILL_FILE_BYTES = 512 * 1024;
 const BRIDGE_SERVICE_LABELS = [
   'com.chatgpt2localbridge.bridge',
   'com.chatgpt2localbridge.ngrok',
@@ -197,6 +198,57 @@ const cloudDownloadOutput = {
   sourceUrlHost: z.string(),
 };
 
+const bundleFileOutput = {
+  path: z.string(),
+  size: z.number().optional(),
+  lines: z.number().optional(),
+  sha256: z.string().optional(),
+  truncated: z.boolean(),
+  content: z.string().optional(),
+  error: z.string().optional(),
+};
+
+const pathReadFileOutput = {
+  path: z.string(),
+  projectPath: z.string().optional(),
+  relativePath: z.string().optional(),
+  size: z.number().optional(),
+  lines: z.number().optional(),
+  sha256: z.string().optional(),
+  truncated: z.boolean().optional(),
+  content: z.string().optional(),
+  error: z.string().optional(),
+};
+
+const skillOutput = {
+  id: z.string(),
+  name: z.string(),
+  description: z.string().optional(),
+  root: z.string(),
+  path: z.string(),
+  directory: z.string(),
+  skillFile: z.string(),
+};
+
+const skillBundleFileOutput = {
+  path: z.string(),
+  size: z.number().optional(),
+  sha256: z.string().optional(),
+  truncated: z.boolean(),
+  content: z.string().optional(),
+  error: z.string().optional(),
+};
+
+const policyShape = {
+  allowedProjectRoots: z.array(z.string()),
+  skillRoots: z.array(z.string()),
+  denyGlobs: z.array(z.string()),
+  shell: z.object({
+    enabled: z.boolean(),
+    denyPatterns: z.array(z.string()),
+  }),
+};
+
 export function createMcpServer(config: BridgeConfig): McpServer {
   activeConfig = config;
   const server = new McpServer(
@@ -246,7 +298,7 @@ export function createMcpServer(config: BridgeConfig): McpServer {
 
   server.registerTool('code.read', {
     title: 'Read Files',
-    description: 'Read one or more text files from a local project.',
+    description: 'Read one or more text files from a local project. If the user provides absolute local paths like /home/... or /Users/..., prefer file.read_path or file_read_path instead.',
     inputSchema: {
       projectPath: z.string(),
       files: z.array(z.string()).min(1),
@@ -272,6 +324,338 @@ export function createMcpServer(config: BridgeConfig): McpServer {
         files: results.map(({ path, lines, truncated, error }) => ({ path, lines, truncated, error })),
       },
       _meta: { fileContents: results },
+    };
+  }));
+
+  server.registerTool('file.read_path', {
+    title: 'Read Absolute Local Paths',
+    description: 'Read one or more absolute text file paths from approved local/Linux/Mac workspace roots. Use this whenever the user gives a full local path such as /home/user/project/file.py or /Users/alex/project/file.md; do not use cloud Python or a sandbox shell to check these local paths.',
+    inputSchema: {
+      paths: z.array(z.string().min(1)).min(1).max(20)
+        .describe('Absolute local file paths to read. Each path must be inside bridge.policy allowedProjectRoots.'),
+      maxLines: z.number().int().min(1).max(5000).default(1000),
+    },
+    outputSchema: {
+      files: z.array(z.object(pathReadFileOutput)),
+    },
+    annotations: { readOnlyHint: true, openWorldHint: false },
+  }, withToolLogging('file.read_path', async ({ paths, maxLines }) => {
+    const results = paths.map((requestedPath) => readAllowedPathFile(requestedPath, maxLines));
+
+    return {
+      content: [{
+        type: 'text' as const,
+        text: results.map((r) => r.error
+          ? `${r.path}: ${r.error}`
+          : `--- ${r.path} (${r.lines} lines${r.truncated ? ', truncated' : ''}) ---\n${r.content}`
+        ).join('\n\n'),
+      }],
+      structuredContent: {
+        files: results,
+      },
+      _meta: { fileContents: results },
+    };
+  }));
+
+  server.registerTool('file_read_path', {
+    title: 'Read Absolute Local Paths',
+    description: 'Compatibility alias for file.read_path. Read one or more absolute text file paths from approved local/Linux/Mac workspace roots. Use this when ChatGPT asks for file_read_path or when dotted MCP tool names are not available in the current client.',
+    inputSchema: {
+      paths: z.array(z.string().min(1)).min(1).max(20)
+        .describe('Absolute local file paths to read. Each path must be inside bridge.policy allowedProjectRoots.'),
+      maxLines: z.number().int().min(1).max(5000).default(1000),
+    },
+    outputSchema: {
+      files: z.array(z.object(pathReadFileOutput)),
+    },
+    annotations: { readOnlyHint: true, openWorldHint: false },
+  }, withToolLogging('file_read_path', async ({ paths, maxLines }) => {
+    const results = paths.map((requestedPath) => readAllowedPathFile(requestedPath, maxLines));
+
+    return {
+      content: [{
+        type: 'text' as const,
+        text: results.map((r) => r.error
+          ? `${r.path}: ${r.error}`
+          : `--- ${r.path} (${r.lines} lines${r.truncated ? ', truncated' : ''}) ---\n${r.content}`
+        ).join('\n\n'),
+      }],
+      structuredContent: {
+        files: results,
+      },
+      _meta: { fileContents: results },
+    };
+  }));
+
+  server.registerTool('project.bundle', {
+    title: 'Bundle Project Context',
+    description: 'Read a local directory summary, selected text files, and optional git diff in one call. Use this when the user wants several local files inspected or copied into a cloud-side downloadable artifact: read local first with this tool, then generate the downloadable copy from the returned content.',
+    inputSchema: {
+      projectPath: z.string(),
+      dir: z.string().default('.'),
+      files: z.array(z.string()).max(40).default([]),
+      includeDirectorySummary: z.boolean().default(true),
+      recursive: z.boolean().default(false),
+      maxEntries: z.number().int().min(1).max(1000).default(120),
+      maxFileBytes: z.number().int().min(100).max(MAX_FILE_BYTES).default(120_000),
+      maxTotalBytes: z.number().int().min(1000).max(4 * 1024 * 1024).default(750_000),
+      includeGitDiff: z.boolean().default(false),
+    },
+    outputSchema: {
+      projectPath: z.string(),
+      dir: z.string(),
+      directorySummary: z.array(z.object(directoryEntryOutput)),
+      files: z.array(z.object(bundleFileOutput)),
+      diff: z.string().optional(),
+      truncated: z.boolean(),
+      notes: z.array(z.string()),
+    },
+    annotations: { readOnlyHint: true, openWorldHint: false },
+  }, withToolLogging('project.bundle', async ({
+    projectPath,
+    dir,
+    files,
+    includeDirectorySummary,
+    recursive,
+    maxEntries,
+    maxFileBytes,
+    maxTotalBytes,
+    includeGitDiff,
+  }) => {
+    const root = resolveProject(projectPath);
+    const notes: string[] = [];
+    let remainingBytes = maxTotalBytes;
+    let truncated = false;
+    let directorySummary: Array<{ path: string; type: 'file' | 'directory' | 'other'; size: number; modifiedAt: string }> = [];
+
+    if (includeDirectorySummary) {
+      const target = resolveInsideProject(root, dir);
+      const entries = listDirectory(root, target, recursive, maxEntries);
+      directorySummary = entries.items;
+      truncated = truncated || entries.truncated;
+      if (entries.truncated) notes.push('Directory summary was truncated by maxEntries.');
+    }
+
+    const bundledFiles = files.map((file) => {
+      const result = readProjectFileForBundle(root, file, maxFileBytes, remainingBytes);
+      if (result.content) {
+        remainingBytes -= Buffer.byteLength(result.content, 'utf-8');
+      }
+      truncated = truncated || result.truncated;
+      if (result.error) notes.push(`${file}: ${result.error}`);
+      return result;
+    });
+
+    let diff: string | undefined;
+    if (includeGitDiff) {
+      try {
+        diff = truncate(getRawDiff(root), Math.min(remainingBytes, maxFileBytes));
+        remainingBytes -= Buffer.byteLength(diff, 'utf-8');
+        if (diff.endsWith('... (truncated)')) {
+          truncated = true;
+          notes.push('Git diff was truncated by byte limits.');
+        }
+      } catch (err) {
+        notes.push(`git diff unavailable: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    }
+
+    const content = formatBundleContent({ root, dir, directorySummary, files: bundledFiles, diff, notes, truncated });
+    return {
+      content: [{ type: 'text' as const, text: content }],
+      structuredContent: {
+        projectPath: root,
+        dir,
+        directorySummary,
+        files: bundledFiles,
+        diff,
+        truncated,
+        notes,
+      },
+    };
+  }));
+
+  server.registerTool('policy.read', {
+    title: 'Read Bridge Policy',
+    description: 'Read the active local safety policy: approved workspace roots, skill roots, denied file globs, and shell rules.',
+    inputSchema: {},
+    outputSchema: {
+      policyPath: z.string(),
+      policy: z.object(policyShape),
+      warnings: z.array(z.string()),
+    },
+    annotations: { readOnlyHint: true, openWorldHint: false },
+  }, withToolLogging('policy.read', async () => {
+    const policy = activeConfig?.policy ?? config.policy;
+    const warnings = validatePolicy(policy).warnings;
+    return {
+      content: [{ type: 'text' as const, text: formatPolicySummary(config.policyPath, policy, warnings) }],
+      structuredContent: { policyPath: config.policyPath, policy, warnings },
+    };
+  }));
+
+  server.registerTool('policy.validate', {
+    title: 'Validate Bridge Policy',
+    description: 'Validate a proposed policy before saving it in the native app or bridge.policy.json. This tool does not write files.',
+    inputSchema: {
+      allowedProjectRoots: z.array(z.string()).default([]),
+      skillRoots: z.array(z.string()).default([]),
+      denyGlobs: z.array(z.string()).default([]),
+      shell: z.object({
+        enabled: z.boolean().default(true),
+        denyPatterns: z.array(z.string()).default([]),
+      }).default({ enabled: true, denyPatterns: [] }),
+    },
+    outputSchema: {
+      ok: z.boolean(),
+      errors: z.array(z.string()),
+      warnings: z.array(z.string()),
+      normalized: z.object(policyShape),
+    },
+    annotations: { readOnlyHint: true, openWorldHint: false },
+  }, withToolLogging('policy.validate', async (policy) => {
+    const normalized = normalizePolicy(policy);
+    const result = validatePolicy(normalized);
+    return {
+      content: [{
+        type: 'text' as const,
+        text: result.ok
+          ? `Policy is valid.${result.warnings.length ? `\nWarnings:\n${result.warnings.map((warning) => `- ${warning}`).join('\n')}` : ''}`
+          : `Policy has errors:\n${result.errors.map((error) => `- ${error}`).join('\n')}`,
+      }],
+      structuredContent: { ...result, normalized },
+    };
+  }));
+
+  server.registerTool('skill.list', {
+    title: 'List Local Skills',
+    description: 'List SKILL.md files from approved skill roots. Defaults to ~/.codex/skills when available.',
+    inputSchema: {
+      skillRoot: z.string().optional(),
+      maxResults: z.number().int().min(1).max(1000).default(200),
+    },
+    outputSchema: {
+      skillRoot: z.string(),
+      skills: z.array(z.object(skillOutput)),
+      truncated: z.boolean(),
+    },
+    annotations: { readOnlyHint: true, openWorldHint: false },
+  }, withToolLogging('skill.list', async ({ skillRoot, maxResults }) => {
+    const root = resolveSkillRoot(skillRoot);
+    const result = listLocalSkills(root, maxResults);
+    return {
+      content: [{ type: 'text' as const, text: formatSkillList(result.skills, result.truncated) }],
+      structuredContent: { skillRoot: root, skills: result.skills, truncated: result.truncated },
+    };
+  }));
+
+  server.registerTool('skill.search', {
+    title: 'Search Local Skills',
+    description: 'Search approved local SKILL.md files by name, description, path, and content preview.',
+    inputSchema: {
+      query: z.string().min(1),
+      skillRoot: z.string().optional(),
+      maxResults: z.number().int().min(1).max(100).default(20),
+    },
+    outputSchema: {
+      query: z.string(),
+      skillRoot: z.string(),
+      skills: z.array(z.object(skillOutput).extend({
+        score: z.number(),
+        snippet: z.string().optional(),
+      })),
+    },
+    annotations: { readOnlyHint: true, openWorldHint: false },
+  }, withToolLogging('skill.search', async ({ query, skillRoot, maxResults }) => {
+    const root = resolveSkillRoot(skillRoot);
+    const skills = searchLocalSkills(root, query, maxResults);
+    return {
+      content: [{ type: 'text' as const, text: skills.length ? skills.map((skill) => `${skill.id}: ${skill.description ?? skill.path}`).join('\n') : `No local skills matched "${query}".` }],
+      structuredContent: { query, skillRoot: root, skills },
+    };
+  }));
+
+  server.registerTool('skill.read', {
+    title: 'Read Local Skill',
+    description: 'Read one approved local SKILL.md file. Use this before following a local Codex skill from ChatGPT.',
+    inputSchema: {
+      skill: z.string().min(1).describe('Skill id, name, relative directory, or relative path to SKILL.md'),
+      skillRoot: z.string().optional(),
+      maxBytes: z.number().int().min(1000).max(MAX_SKILL_FILE_BYTES).default(120_000),
+    },
+    outputSchema: {
+      skill: z.object(skillOutput),
+      content: z.string(),
+      truncated: z.boolean(),
+    },
+    annotations: { readOnlyHint: true, openWorldHint: false },
+  }, withToolLogging('skill.read', async ({ skill, skillRoot, maxBytes }) => {
+    const root = resolveSkillRoot(skillRoot);
+    const record = findLocalSkill(root, skill);
+    const read = readSkillFile(root, record.skillFile, maxBytes);
+    auditEvent('skill.read', { skill: record.id, root, file: record.skillFile, truncated: read.truncated });
+    return {
+      content: [{ type: 'text' as const, text: read.content }],
+      structuredContent: { skill: record, content: read.content, truncated: read.truncated },
+    };
+  }));
+
+  server.registerTool('skill.bundle', {
+    title: 'Bundle Local Skill',
+    description: 'Bundle a local SKILL.md with directly referenced local text files such as references/*.md. Use this when a task needs the whole local skill context.',
+    inputSchema: {
+      skill: z.string().min(1),
+      skillRoot: z.string().optional(),
+      includeReferences: z.boolean().default(true),
+      maxReferenceFiles: z.number().int().min(0).max(40).default(12),
+      maxBytes: z.number().int().min(1000).max(2 * 1024 * 1024).default(250_000),
+    },
+    outputSchema: {
+      skill: z.object(skillOutput),
+      files: z.array(z.object(skillBundleFileOutput)),
+      truncated: z.boolean(),
+      notes: z.array(z.string()),
+    },
+    annotations: { readOnlyHint: true, openWorldHint: false },
+  }, withToolLogging('skill.bundle', async ({ skill, skillRoot, includeReferences, maxReferenceFiles, maxBytes }) => {
+    const root = resolveSkillRoot(skillRoot);
+    const record = findLocalSkill(root, skill);
+    const bundle = bundleLocalSkill(root, record, includeReferences, maxReferenceFiles, maxBytes);
+    auditEvent('skill.bundle', { skill: record.id, root, files: bundle.files.map((file) => file.path), truncated: bundle.truncated });
+    return {
+      content: [{ type: 'text' as const, text: formatSkillBundle(record, bundle.files, bundle.notes, bundle.truncated) }],
+      structuredContent: { skill: record, ...bundle },
+    };
+  }));
+
+  server.registerTool('skill.route', {
+    title: 'Route Task To Local Skills',
+    description: 'Recommend local skills for a task and return a short follow-up prompt for reading or bundling them.',
+    inputSchema: {
+      task: z.string().min(1),
+      skillRoot: z.string().optional(),
+      maxResults: z.number().int().min(1).max(10).default(5),
+    },
+    outputSchema: {
+      task: z.string(),
+      skillRoot: z.string(),
+      recommendations: z.array(z.object(skillOutput).extend({
+        score: z.number(),
+        reason: z.string(),
+      })),
+      prompt: z.string(),
+    },
+    annotations: { readOnlyHint: true, openWorldHint: false },
+  }, withToolLogging('skill.route', async ({ task, skillRoot, maxResults }) => {
+    const root = resolveSkillRoot(skillRoot);
+    const recommendations = routeLocalSkills(root, task, maxResults);
+    const prompt = recommendations.length
+      ? `请先使用 skill.bundle 读取这些本地技能，再继续任务：${recommendations.map((skill) => skill.id).join(', ')}。`
+      : '没有找到明显匹配的本地技能；可以先使用 skill.search 换关键词检索。';
+    auditEvent('skill.route', { task: truncate(task, 500), root, skills: recommendations.map((skill) => skill.id) });
+    return {
+      content: [{ type: 'text' as const, text: `${prompt}\n${recommendations.map((skill) => `- ${skill.id}: ${skill.reason}`).join('\n')}`.trim() }],
+      structuredContent: { task, skillRoot: root, recommendations, prompt },
     };
   }));
 
@@ -1269,7 +1653,7 @@ function summarizeArgs(args: unknown): string {
   if (!args || typeof args !== 'object') return '';
   const source = args as Record<string, unknown>;
   const summary: Record<string, unknown> = {};
-  for (const key of ['path', 'projectPath', 'file', 'files', 'query', 'glob', 'command', 'ref', 'checkpoint']) {
+  for (const key of ['path', 'paths', 'projectPath', 'dir', 'file', 'files', 'query', 'glob', 'command', 'ref', 'checkpoint', 'skill', 'skillRoot', 'task']) {
     if (!(key in source)) continue;
     const value = source[key];
     if (key === 'command' && typeof value === 'string') {
@@ -1312,6 +1696,27 @@ function assertAllowedProjectRoot(root: string) {
     return root === entry || rootWithSep.startsWith(allowedRoot);
   });
   if (!ok) throw new Error(`Project path is outside allowed roots: ${root}`);
+}
+
+function resolveAllowedRootForPath(fullPath: string): string {
+  const policy = activeConfig?.policy;
+  if (!policy?.allowedProjectRoots.length) {
+    const stat = fs.existsSync(fullPath) ? fs.statSync(fullPath) : undefined;
+    return stat?.isDirectory() ? fullPath : path.dirname(fullPath);
+  }
+
+  const allowed = policy.allowedProjectRoots
+    .map((entry) => path.resolve(expandHome(entry)))
+    .filter((entry) => pathIsInsideRoot(fullPath, entry))
+    .sort((a, b) => b.length - a.length);
+
+  if (!allowed.length) throw new Error(`Path is outside allowed roots: ${fullPath}`);
+  return allowed[0];
+}
+
+function pathIsInsideRoot(fullPath: string, root: string): boolean {
+  const rootWithSep = root.endsWith(path.sep) ? root : `${root}${path.sep}`;
+  return fullPath === root || fullPath.startsWith(rootWithSep);
 }
 
 function assertNotDeniedPath(root: string, fullPath: string) {
@@ -1366,6 +1771,73 @@ function readProjectFile(root: string, relPath: string, maxLines: number) {
   }
 }
 
+function readAllowedPathFile(requestedPath: string, maxLines: number) {
+  try {
+    if (!path.isAbsolute(expandHome(requestedPath))) {
+      throw new Error(`Path must be absolute: ${requestedPath}`);
+    }
+    const fullPath = path.resolve(expandHome(requestedPath));
+    const root = resolveAllowedRootForPath(fullPath);
+    assertNotDeniedPath(root, fullPath);
+    const relativePath = path.relative(root, fullPath).split(path.sep).join('/');
+    const stat = fs.statSync(fullPath);
+    if (!stat.isFile()) return { path: fullPath, projectPath: root, relativePath, error: 'Not a file' };
+    if (stat.size > MAX_FILE_BYTES) return { path: fullPath, projectPath: root, relativePath, size: stat.size, error: `File too large (${stat.size} bytes)` };
+    if (isBinaryFile(fullPath)) return { path: fullPath, projectPath: root, relativePath, size: stat.size, error: 'Binary file' };
+    const bytes = fs.readFileSync(fullPath);
+    const content = bytes.toString('utf-8');
+    const lines = content.split('\n');
+    const truncated = lines.length > maxLines;
+    return {
+      path: fullPath,
+      projectPath: root,
+      relativePath,
+      size: stat.size,
+      lines: lines.length,
+      sha256: createHash('sha256').update(bytes).digest('hex'),
+      truncated,
+      content: truncated ? `${lines.slice(0, maxLines).join('\n')}\n... (truncated)` : content,
+    };
+  } catch (err) {
+    return { path: requestedPath, error: err instanceof Error ? err.message : String(err) };
+  }
+}
+
+function readProjectFileForBundle(root: string, relPath: string, maxFileBytes: number, remainingBytes: number) {
+  try {
+    const fullPath = resolveInsideProject(root, relPath);
+    const stat = fs.statSync(fullPath);
+    if (!stat.isFile()) return { path: relPath, truncated: false, error: 'Not a file' };
+    if (stat.size > MAX_FILE_BYTES) {
+      return { path: relPath, size: stat.size, truncated: false, error: `File too large (${stat.size} bytes)` };
+    }
+    if (isBinaryFile(fullPath)) {
+      return { path: relPath, size: stat.size, truncated: false, error: 'Binary file' };
+    }
+    if (remainingBytes <= 0) {
+      return { path: relPath, size: stat.size, truncated: true, error: 'Skipped because maxTotalBytes was reached' };
+    }
+
+    const content = fs.readFileSync(fullPath, 'utf-8');
+    const byteLimit = Math.min(maxFileBytes, remainingBytes);
+    const truncated = Buffer.byteLength(content, 'utf-8') > byteLimit;
+    return {
+      path: relPath,
+      size: stat.size,
+      lines: content.split('\n').length,
+      sha256: createHash('sha256').update(fs.readFileSync(fullPath)).digest('hex'),
+      truncated,
+      content: truncate(content, byteLimit),
+    };
+  } catch (err) {
+    return {
+      path: relPath,
+      truncated: false,
+      error: err instanceof Error ? err.message : String(err),
+    };
+  }
+}
+
 function readProjectFileRange(root: string, relPath: string, startLine: number, endLine: number) {
   if (endLine < startLine) throw new Error('endLine must be greater than or equal to startLine');
   if (endLine - startLine > 1000) throw new Error('Line range is too large; maximum is 1000 lines');
@@ -1383,6 +1855,437 @@ function readProjectFileRange(root: string, relPath: string, startLine: number, 
     totalLines: lines.length,
     content: selected.map((line, index) => `${startLine + index}: ${line}`).join('\n'),
   };
+}
+
+function formatBundleContent(bundle: {
+  root: string;
+  dir: string;
+  directorySummary: Array<{ path: string; type: 'file' | 'directory' | 'other'; size: number; modifiedAt: string }>;
+  files: Array<{ path: string; size?: number; lines?: number; sha256?: string; truncated: boolean; content?: string; error?: string }>;
+  diff?: string;
+  notes: string[];
+  truncated: boolean;
+}) {
+  const sections = [
+    '# ChatGPT2LocalBridge Project Bundle',
+    `Project: ${bundle.root}`,
+    `Directory: ${bundle.dir}`,
+    `Truncated: ${bundle.truncated ? 'yes' : 'no'}`,
+  ];
+
+  if (bundle.directorySummary.length) {
+    sections.push(
+      '',
+      '## Directory Summary',
+      bundle.directorySummary
+        .map((entry) => `${entry.type.padEnd(9)} ${entry.path} (${entry.size} bytes)`)
+        .join('\n'),
+    );
+  }
+
+  if (bundle.files.length) {
+    sections.push('', '## Files');
+    for (const file of bundle.files) {
+      const meta = [
+        file.size == null ? undefined : `${file.size} bytes`,
+        file.lines == null ? undefined : `${file.lines} lines`,
+        file.sha256 ? `sha256=${file.sha256}` : undefined,
+        file.truncated ? 'truncated' : undefined,
+      ].filter(Boolean).join(', ');
+      sections.push(`\n--- BEGIN FILE ${file.path}${meta ? ` (${meta})` : ''} ---`);
+      sections.push(file.error ? `ERROR: ${file.error}` : file.content ?? '');
+      sections.push(`--- END FILE ${file.path} ---`);
+    }
+  }
+
+  if (bundle.diff) {
+    sections.push('', '## Git Diff', bundle.diff);
+  }
+
+  if (bundle.notes.length) {
+    sections.push('', '## Notes', bundle.notes.map((note) => `- ${note}`).join('\n'));
+  }
+
+  return sections.join('\n');
+}
+
+function normalizePolicy(policy: Partial<BridgePolicy>): BridgePolicy {
+  const fallback = activeConfig?.policy ?? {
+    allowedProjectRoots: [],
+    skillRoots: [],
+    denyGlobs: [],
+    shell: { enabled: true, denyPatterns: [] },
+  };
+  return {
+    allowedProjectRoots: (policy.allowedProjectRoots ?? fallback.allowedProjectRoots).map((entry) => path.resolve(expandHome(entry))),
+    skillRoots: (policy.skillRoots ?? fallback.skillRoots).map((entry) => path.resolve(expandHome(entry))),
+    denyGlobs: policy.denyGlobs ?? fallback.denyGlobs,
+    shell: {
+      enabled: policy.shell?.enabled ?? fallback.shell.enabled,
+      denyPatterns: policy.shell?.denyPatterns ?? fallback.shell.denyPatterns,
+    },
+  };
+}
+
+function validatePolicy(policy: BridgePolicy) {
+  const errors: string[] = [];
+  const warnings: string[] = [];
+
+  if (!policy.allowedProjectRoots.length) {
+    errors.push('allowedProjectRoots must include at least one approved workspace root.');
+  }
+  for (const root of policy.allowedProjectRoots) {
+    const resolved = path.resolve(expandHome(root));
+    if (!fs.existsSync(resolved)) warnings.push(`Allowed root does not exist yet: ${resolved}`);
+    if (resolved === '/' || resolved === os.homedir() || resolved === path.dirname(os.homedir())) {
+      warnings.push(`Allowed root is broad; prefer a specific workspace directory: ${resolved}`);
+    }
+  }
+
+  for (const root of policy.skillRoots) {
+    const resolved = path.resolve(expandHome(root));
+    if (!fs.existsSync(resolved)) warnings.push(`Skill root does not exist yet: ${resolved}`);
+    if (resolved.endsWith(`${path.sep}.codex`) || resolved === path.join(os.homedir(), '.codex')) {
+      errors.push('Do not expose the whole ~/.codex directory. Use ~/.codex/skills instead.');
+    }
+  }
+
+  const requiredDeny = ['**/.env', '**/.env.*', '**/*.key', '**/*.pem', '**/.ssh/**'];
+  for (const pattern of requiredDeny) {
+    if (!policy.denyGlobs.includes(pattern)) warnings.push(`Recommended deny glob is missing: ${pattern}`);
+  }
+
+  return { ok: errors.length === 0, errors, warnings };
+}
+
+function formatPolicySummary(policyPath: string, policy: BridgePolicy, warnings: string[]) {
+  return [
+    `Policy: ${policyPath}`,
+    `Allowed roots:\n${policy.allowedProjectRoots.map((root) => `- ${root}`).join('\n') || '- none'}`,
+    `Skill roots:\n${policy.skillRoots.map((root) => `- ${root}`).join('\n') || '- none'}`,
+    `Shell: ${policy.shell.enabled ? 'enabled' : 'disabled'}`,
+    warnings.length ? `Warnings:\n${warnings.map((warning) => `- ${warning}`).join('\n')}` : 'Warnings: none',
+  ].join('\n\n');
+}
+
+function resolveSkillRoot(skillRoot?: string): string {
+  const roots = configuredSkillRoots();
+  if (!roots.length) {
+    throw new Error('No skill roots are configured. Add ~/.codex/skills to policy.skillRoots.');
+  }
+  if (!skillRoot) return roots[0];
+
+  const requested = path.resolve(expandHome(skillRoot));
+  const requestedWithSep = requested.endsWith(path.sep) ? requested : `${requested}${path.sep}`;
+  const ok = roots.some((root) => {
+    const rootWithSep = root.endsWith(path.sep) ? root : `${root}${path.sep}`;
+    return requested === root || requestedWithSep.startsWith(rootWithSep);
+  });
+  if (!ok) {
+    throw new Error(`Skill root is outside approved skill roots: ${requested}`);
+  }
+  if (!fs.existsSync(requested) || !fs.statSync(requested).isDirectory()) {
+    throw new Error(`Skill root is not a directory: ${requested}`);
+  }
+  return requested;
+}
+
+function configuredSkillRoots(): string[] {
+  const roots = (activeConfig?.policy.skillRoots ?? [])
+    .map((entry) => path.resolve(expandHome(entry)))
+    .filter((entry, index, list) => list.indexOf(entry) === index)
+    .filter((entry) => fs.existsSync(entry) && fs.statSync(entry).isDirectory());
+  if (roots.length) return roots;
+
+  const fallback = path.join(os.homedir(), '.codex', 'skills');
+  return fs.existsSync(fallback) && fs.statSync(fallback).isDirectory() ? [fallback] : [];
+}
+
+function resolveInsideSkillRoot(root: string, relPath: string): string {
+  if (path.isAbsolute(relPath)) throw new Error(`Skill path must be relative: ${relPath}`);
+  const fullPath = path.resolve(root, relPath);
+  const rootWithSep = root.endsWith(path.sep) ? root : `${root}${path.sep}`;
+  if (fullPath !== root && !fullPath.startsWith(rootWithSep)) {
+    throw new Error(`Path outside skill root: ${relPath}`);
+  }
+  assertNotDeniedPath(root, fullPath);
+  return fullPath;
+}
+
+function listLocalSkills(root: string, maxResults: number) {
+  const skills: Array<{
+    id: string;
+    name: string;
+    description: string | undefined;
+    root: string;
+    path: string;
+    directory: string;
+    skillFile: string;
+  }> = [];
+  let truncated = false;
+
+  function walk(dir: string) {
+    if (truncated) return;
+    const entries = fs.readdirSync(dir, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name));
+    for (const entry of entries) {
+      if (truncated) return;
+      if (SKIP_DIRS.has(entry.name)) continue;
+      const fullPath = path.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        const skillFile = path.join(fullPath, 'SKILL.md');
+        if (fs.existsSync(skillFile) && fs.statSync(skillFile).isFile()) {
+          if (skills.length >= maxResults) {
+            truncated = true;
+            return;
+          }
+          skills.push(skillRecord(root, skillFile));
+          continue;
+        }
+        walk(fullPath);
+      }
+    }
+  }
+
+  walk(root);
+  skills.sort((a, b) => a.id.localeCompare(b.id));
+  return { skills, truncated };
+}
+
+function skillRecord(root: string, skillFilePath: string) {
+  const skillFile = path.relative(root, skillFilePath).split(path.sep).join('/');
+  const directory = path.dirname(skillFile).split(path.sep).join('/');
+  const content = safeReadText(skillFilePath, 120_000);
+  const metadata = parseSkillMetadata(content);
+  const id = directory === '.' ? metadata.name ?? path.basename(root) : directory;
+  return {
+    id,
+    name: metadata.name ?? path.basename(directory),
+    description: metadata.description,
+    root,
+    path: directory,
+    directory,
+    skillFile,
+  };
+}
+
+function parseSkillMetadata(content: string): { name?: string; description?: string } {
+  const metadata: { name?: string; description?: string } = {};
+  if (content.startsWith('---')) {
+    const end = content.indexOf('\n---', 3);
+    if (end > 0) {
+      const frontmatter = content.slice(3, end).split('\n');
+      for (const line of frontmatter) {
+        const match = line.match(/^([A-Za-z0-9_-]+):\s*(.+)$/);
+        if (!match) continue;
+        const key = match[1].toLowerCase();
+        const value = match[2].trim().replace(/^["']|["']$/g, '');
+        if (key === 'name') metadata.name = value;
+        if (key === 'description') metadata.description = value;
+      }
+    }
+  }
+  if (!metadata.description) {
+    metadata.description = content
+      .split('\n')
+      .map((line) => line.trim())
+      .find((line) => line && !line.startsWith('#') && !line.startsWith('---') && !line.includes(':'));
+  }
+  return metadata;
+}
+
+function searchLocalSkills(root: string, query: string, maxResults: number) {
+  const needle = query.toLowerCase();
+  const skills = listLocalSkills(root, 1000).skills
+    .map((skill) => {
+      const fullPath = resolveInsideSkillRoot(root, skill.skillFile);
+      const content = safeReadText(fullPath, 120_000);
+      const haystack = `${skill.id}\n${skill.name}\n${skill.description ?? ''}\n${skill.path}\n${content}`.toLowerCase();
+      const score = scoreText(haystack, needle, skill);
+      const snippet = score > 0 ? snippetAround(content, needle) : undefined;
+      return { ...skill, score, snippet };
+    })
+    .filter((skill) => skill.score > 0)
+    .sort((a, b) => b.score - a.score || a.id.localeCompare(b.id))
+    .slice(0, maxResults);
+  return skills;
+}
+
+function scoreText(haystack: string, needle: string, skill: { id: string; name: string; description?: string; path: string }) {
+  const tokens = needle.split(/\s+/).filter(Boolean);
+  let score = 0;
+  for (const token of tokens) {
+    if (skill.id.toLowerCase().includes(token)) score += 12;
+    if (skill.name.toLowerCase().includes(token)) score += 10;
+    if ((skill.description ?? '').toLowerCase().includes(token)) score += 7;
+    if (skill.path.toLowerCase().includes(token)) score += 5;
+    if (haystack.includes(token)) score += 1;
+  }
+  return score;
+}
+
+function snippetAround(content: string, lowerNeedle: string) {
+  const lower = content.toLowerCase();
+  const firstToken = lowerNeedle.split(/\s+/).find(Boolean) ?? lowerNeedle;
+  const index = lower.indexOf(firstToken);
+  if (index < 0) return content.slice(0, 240);
+  const start = Math.max(0, index - 100);
+  const end = Math.min(content.length, index + 180);
+  return content.slice(start, end).replace(/\s+/g, ' ').trim();
+}
+
+function findLocalSkill(root: string, requested: string) {
+  const cleaned = requested.trim().replace(/^\/+/, '');
+  const directCandidates = [
+    cleaned,
+    cleaned.endsWith('/SKILL.md') || cleaned === 'SKILL.md' ? cleaned : `${cleaned}/SKILL.md`,
+  ];
+  for (const candidate of directCandidates) {
+    try {
+      const fullPath = resolveInsideSkillRoot(root, candidate);
+      if (fs.existsSync(fullPath) && fs.statSync(fullPath).isFile() && path.basename(fullPath) === 'SKILL.md') {
+        return skillRecord(root, fullPath);
+      }
+    } catch {
+      // Fall through to indexed lookup.
+    }
+  }
+
+  const requestedLower = cleaned.toLowerCase();
+  const record = listLocalSkills(root, 1000).skills.find((skill) => (
+    skill.id.toLowerCase() === requestedLower
+    || skill.name.toLowerCase() === requestedLower
+    || skill.path.toLowerCase() === requestedLower
+    || skill.skillFile.toLowerCase() === requestedLower
+  ));
+  if (!record) throw new Error(`Skill not found in ${root}: ${requested}`);
+  return record;
+}
+
+function readSkillFile(root: string, relPath: string, maxBytes: number) {
+  const fullPath = resolveInsideSkillRoot(root, relPath);
+  const stat = fs.statSync(fullPath);
+  if (!stat.isFile()) throw new Error(`Not a file: ${relPath}`);
+  if (isBinaryFile(fullPath)) throw new Error(`Binary file: ${relPath}`);
+  const content = fs.readFileSync(fullPath, 'utf-8');
+  const truncated = Buffer.byteLength(content, 'utf-8') > maxBytes;
+  return {
+    path: relPath,
+    size: stat.size,
+    sha256: createHash('sha256').update(fs.readFileSync(fullPath)).digest('hex'),
+    truncated,
+    content: truncate(content, maxBytes),
+  };
+}
+
+function bundleLocalSkill(
+  root: string,
+  record: ReturnType<typeof skillRecord>,
+  includeReferences: boolean,
+  maxReferenceFiles: number,
+  maxBytes: number,
+) {
+  let remainingBytes = maxBytes;
+  let truncated = false;
+  const notes: string[] = [];
+  const files: Array<{ path: string; size?: number; sha256?: string; truncated: boolean; content?: string; error?: string }> = [];
+
+  function addFile(relPath: string) {
+    if (remainingBytes <= 0) {
+      truncated = true;
+      notes.push(`${relPath}: skipped because maxBytes was reached`);
+      return;
+    }
+    try {
+      const read = readSkillFile(root, relPath, Math.min(remainingBytes, MAX_SKILL_FILE_BYTES));
+      remainingBytes -= Buffer.byteLength(read.content, 'utf-8');
+      truncated = truncated || read.truncated;
+      files.push(read);
+    } catch (err) {
+      files.push({ path: relPath, truncated: false, error: err instanceof Error ? err.message : String(err) });
+    }
+  }
+
+  addFile(record.skillFile);
+  if (includeReferences && files[0]?.content) {
+    const refs = extractSkillReferences(root, record, files[0].content).slice(0, maxReferenceFiles);
+    for (const ref of refs) addFile(ref);
+    if (refs.length >= maxReferenceFiles) notes.push('Reference files were limited by maxReferenceFiles.');
+  }
+
+  return { files, truncated, notes };
+}
+
+function extractSkillReferences(root: string, record: ReturnType<typeof skillRecord>, content: string): string[] {
+  const skillDir = record.directory === '.' ? '' : record.directory;
+  const candidates = new Set<string>();
+  const markdownLinks = content.matchAll(/\]\(([^)]+)\)/g);
+  for (const match of markdownLinks) candidates.add(match[1]);
+  const backticks = content.matchAll(/`([^`\n]+\.(?:md|json|ya?ml|txt|toml|sh))`/gi);
+  for (const match of backticks) candidates.add(match[1]);
+
+  return [...candidates]
+    .map((candidate) => candidate.trim().split('#')[0])
+    .filter((candidate) => candidate && !candidate.startsWith('http:') && !candidate.startsWith('https:') && !candidate.startsWith('/'))
+    .map((candidate) => (skillDir ? path.posix.join(skillDir, candidate) : candidate))
+    .filter((candidate, index, list) => list.indexOf(candidate) === index)
+    .filter((candidate) => {
+      try {
+        const fullPath = resolveInsideSkillRoot(root, candidate);
+        return fs.existsSync(fullPath) && fs.statSync(fullPath).isFile() && isTextLike(fullPath);
+      } catch {
+        return false;
+      }
+    });
+}
+
+function routeLocalSkills(root: string, task: string, maxResults: number) {
+  const skills = searchLocalSkills(root, task, maxResults);
+  return skills.map((skill) => ({
+    ...skill,
+    reason: skill.snippet
+      ? `matched task terms in ${skill.id}: ${skill.snippet}`
+      : `matched task terms in ${skill.id}`,
+  }));
+}
+
+function formatSkillList(skills: Array<ReturnType<typeof skillRecord>>, truncated: boolean) {
+  if (!skills.length) return 'No local skills found.';
+  return `${skills.map((skill) => `${skill.id}: ${skill.description ?? skill.skillFile}`).join('\n')}${truncated ? '\n... (truncated)' : ''}`;
+}
+
+function formatSkillBundle(
+  record: ReturnType<typeof skillRecord>,
+  files: Array<{ path: string; content?: string; error?: string; truncated: boolean; sha256?: string; size?: number }>,
+  notes: string[],
+  truncated: boolean,
+) {
+  const sections = [
+    '# ChatGPT2LocalBridge Skill Bundle',
+    `Skill: ${record.id}`,
+    `Root: ${record.root}`,
+    `Truncated: ${truncated ? 'yes' : 'no'}`,
+  ];
+  for (const file of files) {
+    const meta = [
+      file.size == null ? undefined : `${file.size} bytes`,
+      file.sha256 ? `sha256=${file.sha256}` : undefined,
+      file.truncated ? 'truncated' : undefined,
+    ].filter(Boolean).join(', ');
+    sections.push('', `--- BEGIN FILE ${file.path}${meta ? ` (${meta})` : ''} ---`);
+    sections.push(file.error ? `ERROR: ${file.error}` : file.content ?? '');
+    sections.push(`--- END FILE ${file.path} ---`);
+  }
+  if (notes.length) sections.push('', '## Notes', notes.map((note) => `- ${note}`).join('\n'));
+  return sections.join('\n');
+}
+
+function safeReadText(filePath: string, maxBytes: number) {
+  try {
+    const content = fs.readFileSync(filePath, 'utf-8');
+    return truncate(content, maxBytes);
+  } catch {
+    return '';
+  }
 }
 
 function fileChangeResponse(root: string, file: string, message: string) {

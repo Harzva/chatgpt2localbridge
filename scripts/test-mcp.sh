@@ -5,10 +5,28 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 TMPDIR="$(mktemp -d)"
 trap 'rm -rf "$TMPDIR"' EXIT
 mkdir -p "$TMPDIR/workspace" "$TMPDIR/cloud"
+mkdir -p "$TMPDIR/skills/demo-skill/references"
+cat >"$TMPDIR/skills/demo-skill/SKILL.md" <<'EOF'
+---
+name: demo-skill
+description: Demo skill for local skill registry tests.
+---
+
+# Demo Skill
+
+Use `references/checklist.md` before making a change.
+EOF
+cat >"$TMPDIR/skills/demo-skill/references/checklist.md" <<'EOF'
+# Checklist
+
+- Read policy first.
+- Keep changes scoped.
+EOF
 
 cat > "$TMPDIR/bridge.policy.json" <<JSON
 {
   "allowedProjectRoots": ["$ROOT", "$TMPDIR/workspace"],
+  "skillRoots": ["$TMPDIR/skills"],
   "denyGlobs": ["**/.env", "**/.env.*", "**/*.pem", "**/*.key", "**/.ssh/**"],
   "shell": {
     "enabled": true,
@@ -33,10 +51,134 @@ printf '%s\n' "$response" | node -e '
 const fs = require("node:fs");
 const lines = fs.readFileSync(0, "utf8").trim().split(/\n+/).filter(Boolean).map(JSON.parse);
 const tools = lines.find((line) => line.id === 2)?.result?.tools?.map((tool) => tool.name) ?? [];
-for (const name of ["project.snapshot", "file.list", "code.read", "shell.exec", "bridge.health", "bridge.activity", "cloud.download"]) {
+for (const name of ["project.snapshot", "project.bundle", "policy.read", "policy.validate", "skill.list", "skill.search", "skill.read", "skill.bundle", "skill.route", "file.list", "file.read_path", "file_read_path", "code.read", "shell.exec", "bridge.health", "bridge.activity", "cloud.download"]) {
   if (!tools.includes(name)) throw new Error(`missing tool: ${name}`);
 }
 console.log(`[test] tools ok (${tools.length})`);
+'
+
+echo "[test] absolute path read"
+path_read_response="$(
+  printf '%s\n' \
+    '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"path-read-smoke","version":"0.1.0"}}}' \
+    '{"jsonrpc":"2.0","method":"notifications/initialized","params":{}}' \
+    "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/call\",\"params\":{\"name\":\"file.read_path\",\"arguments\":{\"paths\":[\"$ROOT/package.json\"],\"maxLines\":40}}}" \
+  | LOCALBRIDGE_DATA_DIR="$TMPDIR/path-read-data" LOCALBRIDGE_LOG_DIR="$TMPDIR/path-read-logs" LOCALBRIDGE_POLICY_PATH="$TMPDIR/bridge.policy.json" node dist/index.js 2>/dev/null
+)"
+
+printf '%s\n' "$path_read_response" | node -e '
+const fs = require("node:fs");
+const lines = fs.readFileSync(0, "utf8").trim().split(/\n+/).filter(Boolean).map(JSON.parse);
+const file = lines.find((line) => line.id === 2)?.result?.structuredContent?.files?.[0];
+if (!file?.content?.includes("chatgpt2localbridge") || !file?.sha256 || file?.error) {
+  throw new Error(`unexpected file.read_path result: ${JSON.stringify(file)}`);
+}
+console.log("[test] absolute path read ok");
+'
+
+echo "[test] absolute path read alias"
+path_read_alias_response="$(
+  printf '%s\n' \
+    '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"path-read-alias-smoke","version":"0.1.0"}}}' \
+    '{"jsonrpc":"2.0","method":"notifications/initialized","params":{}}' \
+    "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/call\",\"params\":{\"name\":\"file_read_path\",\"arguments\":{\"paths\":[\"$ROOT/package.json\"],\"maxLines\":40}}}" \
+  | LOCALBRIDGE_DATA_DIR="$TMPDIR/path-read-alias-data" LOCALBRIDGE_LOG_DIR="$TMPDIR/path-read-alias-logs" LOCALBRIDGE_POLICY_PATH="$TMPDIR/bridge.policy.json" node dist/index.js 2>/dev/null
+)"
+
+printf '%s\n' "$path_read_alias_response" | node -e '
+const fs = require("node:fs");
+const lines = fs.readFileSync(0, "utf8").trim().split(/\n+/).filter(Boolean).map(JSON.parse);
+const file = lines.find((line) => line.id === 2)?.result?.structuredContent?.files?.[0];
+if (!file?.content?.includes("chatgpt2localbridge") || !file?.sha256 || file?.error) {
+  throw new Error(`unexpected file_read_path result: ${JSON.stringify(file)}`);
+}
+console.log("[test] absolute path read alias ok");
+'
+
+echo "[test] project bundle"
+bundle_response="$(
+  printf '%s\n' \
+    '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"bundle-smoke","version":"0.1.0"}}}' \
+    '{"jsonrpc":"2.0","method":"notifications/initialized","params":{}}' \
+    "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/call\",\"params\":{\"name\":\"project.bundle\",\"arguments\":{\"projectPath\":\"$ROOT\",\"files\":[\"package.json\"],\"includeDirectorySummary\":true,\"maxEntries\":20,\"maxFileBytes\":20000,\"maxTotalBytes\":50000}}}" \
+  | LOCALBRIDGE_DATA_DIR="$TMPDIR/bundle-data" LOCALBRIDGE_LOG_DIR="$TMPDIR/bundle-logs" LOCALBRIDGE_POLICY_PATH="$TMPDIR/bridge.policy.json" node dist/index.js 2>/dev/null
+)"
+
+printf '%s\n' "$bundle_response" | node -e '
+const fs = require("node:fs");
+const lines = fs.readFileSync(0, "utf8").trim().split(/\n+/).filter(Boolean).map(JSON.parse);
+const bundle = lines.find((line) => line.id === 2)?.result?.structuredContent;
+if (!bundle?.files?.some((file) => file.path === "package.json" && file.content?.includes("chatgpt2localbridge"))) {
+  throw new Error(`unexpected project.bundle result: ${JSON.stringify(bundle)}`);
+}
+console.log("[test] project bundle ok");
+'
+
+echo "[test] local skills"
+skill_list_response="$(
+  printf '%s\n' \
+    '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"skill-smoke","version":"0.1.0"}}}' \
+    '{"jsonrpc":"2.0","method":"notifications/initialized","params":{}}' \
+    "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/call\",\"params\":{\"name\":\"skill.list\",\"arguments\":{\"skillRoot\":\"$TMPDIR/skills\",\"maxResults\":20}}}" \
+  | LOCALBRIDGE_DATA_DIR="$TMPDIR/skill-data" LOCALBRIDGE_LOG_DIR="$TMPDIR/skill-logs" LOCALBRIDGE_POLICY_PATH="$TMPDIR/bridge.policy.json" node dist/index.js 2>/dev/null
+)"
+skill_read_response="$(
+  printf '%s\n' \
+    '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"skill-read-smoke","version":"0.1.0"}}}' \
+    '{"jsonrpc":"2.0","method":"notifications/initialized","params":{}}' \
+    "{\"jsonrpc\":\"2.0\",\"id\":3,\"method\":\"tools/call\",\"params\":{\"name\":\"skill.read\",\"arguments\":{\"skillRoot\":\"$TMPDIR/skills\",\"skill\":\"demo-skill\"}}}" \
+  | LOCALBRIDGE_DATA_DIR="$TMPDIR/skill-data" LOCALBRIDGE_LOG_DIR="$TMPDIR/skill-logs" LOCALBRIDGE_POLICY_PATH="$TMPDIR/bridge.policy.json" node dist/index.js 2>/dev/null
+)"
+skill_bundle_response="$(
+  printf '%s\n' \
+    '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"skill-bundle-smoke","version":"0.1.0"}}}' \
+    '{"jsonrpc":"2.0","method":"notifications/initialized","params":{}}' \
+    "{\"jsonrpc\":\"2.0\",\"id\":4,\"method\":\"tools/call\",\"params\":{\"name\":\"skill.bundle\",\"arguments\":{\"skillRoot\":\"$TMPDIR/skills\",\"skill\":\"demo-skill\",\"includeReferences\":true}}}" \
+  | LOCALBRIDGE_DATA_DIR="$TMPDIR/skill-data" LOCALBRIDGE_LOG_DIR="$TMPDIR/skill-logs" LOCALBRIDGE_POLICY_PATH="$TMPDIR/bridge.policy.json" node dist/index.js 2>/dev/null
+)"
+skill_route_response="$(
+  printf '%s\n' \
+    '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"skill-route-smoke","version":"0.1.0"}}}' \
+    '{"jsonrpc":"2.0","method":"notifications/initialized","params":{}}' \
+    "{\"jsonrpc\":\"2.0\",\"id\":5,\"method\":\"tools/call\",\"params\":{\"name\":\"skill.route\",\"arguments\":{\"skillRoot\":\"$TMPDIR/skills\",\"task\":\"use demo skill checklist\"}}}" \
+  | LOCALBRIDGE_DATA_DIR="$TMPDIR/skill-data" LOCALBRIDGE_LOG_DIR="$TMPDIR/skill-logs" LOCALBRIDGE_POLICY_PATH="$TMPDIR/bridge.policy.json" node dist/index.js 2>/dev/null
+)"
+
+printf '%s\n%s\n%s\n%s\n' "$skill_list_response" "$skill_read_response" "$skill_bundle_response" "$skill_route_response" | node -e '
+const fs = require("node:fs");
+const lines = fs.readFileSync(0, "utf8").trim().split(/\n+/).filter(Boolean).map(JSON.parse);
+const list = lines.find((line) => line.id === 2)?.result?.structuredContent;
+if (!list?.skills?.some((skill) => skill.id === "demo-skill")) throw new Error(`missing demo skill: ${JSON.stringify(list)}`);
+const read = lines.find((line) => line.id === 3)?.result?.structuredContent;
+if (!read?.content?.includes("Demo Skill")) throw new Error(`unexpected skill.read: ${JSON.stringify(read)}`);
+const bundle = lines.find((line) => line.id === 4)?.result?.structuredContent;
+if (!bundle?.files?.some((file) => file.path === "demo-skill/references/checklist.md")) {
+  throw new Error(`missing bundled reference: ${JSON.stringify(bundle)}`);
+}
+const route = lines.find((line) => line.id === 5)?.result?.structuredContent;
+if (!route?.recommendations?.some((skill) => skill.id === "demo-skill")) throw new Error(`unexpected skill.route: ${JSON.stringify(route)}`);
+console.log("[test] local skills ok");
+'
+
+skill_activity_response="$(
+  printf '%s\n' \
+    '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"skill-activity-smoke","version":"0.1.0"}}}' \
+    '{"jsonrpc":"2.0","method":"notifications/initialized","params":{}}' \
+    "{\"jsonrpc\":\"2.0\",\"id\":6,\"method\":\"tools/call\",\"params\":{\"name\":\"bridge.activity\",\"arguments\":{\"limit\":20,\"includeAudit\":true}}}" \
+  | LOCALBRIDGE_DATA_DIR="$TMPDIR/skill-data" LOCALBRIDGE_LOG_DIR="$TMPDIR/skill-logs" LOCALBRIDGE_POLICY_PATH="$TMPDIR/bridge.policy.json" node dist/index.js 2>/dev/null
+)"
+
+printf '%s\n' "$skill_activity_response" | node -e '
+const fs = require("node:fs");
+const lines = fs.readFileSync(0, "utf8").trim().split(/\n+/).filter(Boolean).map(JSON.parse);
+const activity = lines.find((line) => line.id === 6)?.result?.structuredContent;
+if (!activity?.toolCalls?.some((call) => call.tool === "skill.read" && call.status === "ok")) {
+  throw new Error(`missing skill.read activity: ${JSON.stringify(activity)}`);
+}
+if (!activity?.auditEvents?.some((event) => event.action === "skill.read")) {
+  throw new Error(`missing skill.read audit event: ${JSON.stringify(activity)}`);
+}
+console.log("[test] skill activity ok");
 '
 
 echo "[test] cloud download"

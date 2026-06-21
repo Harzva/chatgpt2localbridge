@@ -8,6 +8,7 @@ ChatGPT2LocalBridge is powerful because it lets a remote ChatGPT session call lo
 - Deny globs block common secret files.
 - Shell commands are filtered by deny patterns.
 - Hosted ChatGPT access should use OAuth.
+- No Authentication is only for loopback-only or private short-lived tests.
 - The unlock code is local operator authorization, not a public password to share.
 
 ## Do Not Commit
@@ -33,3 +34,9 @@ ChatGPT2LocalBridge is powerful because it lets a remote ChatGPT session call lo
 6. Keep `allowedProjectRoots` narrow.
 7. Use `cloud.download` only with trusted HTTPS file URLs.
 8. Set `LOCALBRIDGE_DASHBOARD_TOKEN` before exposing the local console.
+
+## Public Tunnel Rule
+
+If ChatGPT reaches the bridge through ngrok, Cloudflare Tunnel, a VPS reverse proxy, or any public HTTPS domain, choose OAuth in the ChatGPT connector UI.
+
+No Authentication can be useful while testing a loopback-only MCP endpoint, but it should not be used with a public tunnel.

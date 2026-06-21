@@ -9,7 +9,7 @@
 <body>
   <nav class="nav">
     <a class="brand" href="./index.html"><img src="./assets/logo.png" alt="">ChatGPT2LocalBridge</a>
-    <div class="nav-links"><a href="./quickstart.html">Quickstart</a><a href="./showcase.html">Showcase</a><a href="./human-tutorial.html">Human Tutorial</a><a href="./alternatives.html">Alternatives</a></div>
+    <div class="nav-links"><a href="./quickstart.html">Quickstart</a><a href="./authentication-modes.html">Auth Modes</a><a href="./linux-deploy.html">Linux</a><a href="./showcase.html">Showcase</a><a href="./human-tutorial.html">Human Tutorial</a><a href="./alternatives.html">Alternatives</a></div>
   </nav>
   <main class="section">
     <h1>Agent + Computer Use Tutorial</h1>
@@ -19,7 +19,9 @@
     <div class="grid">
       <article class="card"><h3>Do not reveal secrets</h3><p>The agent may paste from local clipboard or guide the operator, but it must not print unlock codes or tokens into chat.</p></article>
       <article class="card"><h3>Stop at safety interstitials</h3><p>If the browser asks the human to trust a tunnel or site, the agent should pause and ask the human to click.</p></article>
-      <article class="card"><h3>Verify after setup</h3><p>The agent should test `/health`, OAuth metadata, and a minimal `file.list` call after authorization.</p></article>
+      <article class="card"><h3>Verify after setup</h3><p>The agent should test `/health`, OAuth metadata, and a minimal `file.list` or `file.read_path` call after authorization.</p></article>
+      <article class="card"><h3>Read policy first</h3><p>After linking, call `policy.read` before broad file operations and confirm skill roots use `~/.codex/skills`.</p></article>
+      <article class="card"><h3>Route local skills</h3><p>Use `skill.route` or `skill.search` before reading a local `SKILL.md`, then use `skill.bundle` for references.</p></article>
     </div>
 
     <h2>Suggested agent prompt</h2>
@@ -28,10 +30,13 @@
 2. Verify OAuth metadata at the public tunnel URL.
 3. Open ChatGPT connector settings.
 4. Create a custom connector named ChatGPT2LocalBridge.
-5. Use URL https://YOUR-DOMAIN/mcp and OAuth.
+5. Use URL https://YOUR-DOMAIN/mcp and OAuth for public tunnels.
 6. If the OAuth page asks for an unlock code, ask the human operator to provide or approve it.
 7. Never print tokens or unlock codes.
-8. After linking, send a minimal file.list test inside the approved workspace.</code></pre>
+8. After linking, send a minimal file.list or file.read_path test inside the approved workspace.
+9. Call policy.read and verify allowedProjectRoots and skillRoots.
+10. Use skill.route before reading local skills.
+11. For Linux paths, create a separate Linux connector instead of reusing the Mac connector.</code></pre>
 
     <div class="screens"><img src="./assets/screenshots/08-agent-computer-use.png" alt="Agent Computer Use setup screenshot"></div>
   </main>

@@ -9,7 +9,7 @@
 <body>
   <nav class="nav">
     <a class="brand" href="./index.html"><img src="./assets/logo.png" alt="">ChatGPT2LocalBridge</a>
-    <div class="nav-links"><a href="./showcase.html">Showcase</a><a href="./human-tutorial.html">Human Tutorial</a><a href="./agent-computer-use.html">Agent Tutorial</a><a href="./alternatives.html">Alternatives</a></div>
+    <div class="nav-links"><a href="./authentication-modes.html">Auth Modes</a><a href="./linux-deploy.html">Linux</a><a href="./showcase.html">Showcase</a><a href="./human-tutorial.html">Human Tutorial</a><a href="./agent-computer-use.html">Agent Tutorial</a><a href="./alternatives.html">Alternatives</a></div>
   </nav>
   <main class="section">
     <h1>Quickstart</h1>
@@ -28,9 +28,32 @@ set -a; source .env.local; set +a
 node dist/index.js --http 3838</code></pre>
     <h2>Health check</h2>
     <pre class="code"><code>curl -sS http://127.0.0.1:3838/health</code></pre>
+    <h2>Authentication choice</h2>
+    <p>Choose OAuth for any public HTTPS tunnel. Choose No Authentication only for loopback or short-lived private tests where the endpoint is not publicly reachable.</p>
+    <pre class="code"><code>Public tunnel: OAuth
+Loopback-only test: No Authentication
+Advanced split policy: Mixed Authentication</code></pre>
+    <h2>Linux server</h2>
+    <p>Run a separate bridge and connector on Linux when ChatGPT needs Linux paths such as <code>/srv/workspace</code> or <code>/home/agent/projects</code>.</p>
+    <pre class="code"><code>REMOTE=linux-box \
+REMOTE_WORKSPACE=/srv/workspace \
+REMOTE_ALLOWED_ROOTS="/srv/workspace,/home/agent/projects" \
+PUBLIC_BASE_URL=https://linux-bridge.example.com \
+bash scripts/deploy-linux-bridge.sh</code></pre>
     <h2>Local console</h2>
     <p>Open the local operator console to inspect status, tool calls, file-download events, and audit history.</p>
     <pre class="code"><code>http://127.0.0.1:3838/app</code></pre>
+    <h2>Native Policy Center</h2>
+    <p>Install the macOS app when you want a local desktop console for policy editing, trace export, project bundles, cloud downloads, and the MCP tool catalog.</p>
+    <pre class="code"><code>npm run macos:install
+open /Applications/ChatGPT2LocalBridge.app</code></pre>
+    <h2>Skill root</h2>
+    <p>The app and policy support a dedicated local skill root. Prefer this path, not the whole Codex runtime directory.</p>
+    <pre class="code"><code>{
+  "skillRoots": [
+    "/Users/YOUR_USERNAME/.codex/skills"
+  ]
+}</code></pre>
   </main>
 </body>
 </html>

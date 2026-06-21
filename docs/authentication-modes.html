@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Authentication Modes - ChatGPT2LocalBridge</title>
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+  <nav class="nav">
+    <a class="brand" href="./index.html"><img src="./assets/logo.png" alt="">ChatGPT2LocalBridge</a>
+    <div class="nav-links"><a href="./quickstart.html">Quickstart</a><a href="./linux-deploy.html">Linux</a><a href="./human-tutorial.html">Human Tutorial</a><a href="./agent-computer-use.html">Agent Tutorial</a><a href="./alternatives.html">Alternatives</a></div>
+  </nav>
+  <main class="section">
+    <h1>Authentication Modes</h1>
+    <p class="lede">Choose OAuth for public tunnels. Use No Authentication only for short-lived private tests.</p>
+
+    <h2>Mode Matrix</h2>
+    <div class="grid">
+      <article class="card"><h3>OAuth</h3><p>Recommended for Mac mini, Linux servers, ngrok, Cloudflare Tunnel, and any public HTTPS endpoint. ChatGPT authorizes once and then calls <code>/mcp</code> with a bearer token.</p></article>
+      <article class="card"><h3>No Authentication</h3><p>Only for loopback or private lab testing. If the URL is public, anyone with the URL can reach the MCP surface.</p></article>
+      <article class="card"><h3>Mixed</h3><p>Advanced mode for deployments that split anonymous low-risk tools from OAuth-protected tools. It is not the default public guide.</p></article>
+    </div>
+
+    <h2>OAuth Fields</h2>
+    <pre class="code"><code>Server URL: https://YOUR-DOMAIN/mcp
+Auth URL: https://YOUR-DOMAIN/oauth/authorize
+Token URL: https://YOUR-DOMAIN/oauth/token
+Registration URL: https://YOUR-DOMAIN/oauth/register
+Authorization server base: https://YOUR-DOMAIN
+Resource: https://YOUR-DOMAIN/mcp
+Scopes: workspace:read workspace:write shell:exec
+OIDC: off</code></pre>
+
+    <h2>Why Two Setups Can Both Work</h2>
+    <p>A Mac mini test can work with No Authentication if the running bridge accepts unauthenticated calls. A Linux server exposed through a tunnel should use OAuth because the endpoint is reachable by hosted ChatGPT over the internet. Both can succeed technically, but OAuth is the public-safe default.</p>
+
+    <h2>Debugging</h2>
+    <p>If ChatGPT runs cloud Python instead of a connector tool, the connector is not selected, not authorized, or not loaded in the current chat. A successful call should show the connector name and a tool such as <code>file.read_path</code> in the activity panel.</p>
+  </main>
+</body>
+</html>

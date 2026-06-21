@@ -16,6 +16,8 @@
       </a>
       <div class="nav-links">
         <a href="./quickstart.html">Quickstart</a>
+        <a href="./authentication-modes.html">Auth Modes</a>
+        <a href="./linux-deploy.html">Linux</a>
         <a href="./showcase.html">Showcase</a>
         <a href="./human-tutorial.html">Human Tutorial</a>
         <a href="./agent-computer-use.html">Agent Tutorial</a>
@@ -29,7 +31,7 @@
         <div>
           <div class="eyebrow">OAuth MCP Connector for local workspaces</div>
           <h1>Let ChatGPT work with approved local files.</h1>
-          <p class="lede">Run a local MCP bridge on your Mac, authorize ChatGPT through OAuth, and keep the filesystem boundary under your control.</p>
+          <p class="lede">Run an MCP bridge on your Mac or Linux machine, authorize ChatGPT through OAuth, and keep the filesystem boundary under your control.</p>
           <div class="actions">
             <a class="button primary" href="./quickstart.html">Start in 5 minutes</a>
             <a class="button" href="./human-tutorial.html">See the walkthrough</a>
@@ -64,12 +66,24 @@
             <p>Supports discovery metadata, Dynamic Client Registration, PKCE, and bearer tokens.</p>
           </article>
           <article class="card">
+            <h3>Mac or Linux</h3>
+            <p>Use separate connectors for separate machines so Mac paths and Linux paths keep their own policy boundaries.</p>
+          </article>
+          <article class="card">
             <h3>Operator-friendly</h3>
             <p>Use a fixed HTTPS tunnel and launchd to keep the bridge alive for long-running work.</p>
           </article>
           <article class="card">
             <h3>Activity console</h3>
             <p>Open the local `/app` console to inspect tool calls, cloud downloads, audit events, and setup state.</p>
+          </article>
+          <article class="card">
+            <h3>Policy Center</h3>
+            <p>The native app edits workspace roots, skill roots, deny globs, and shell rules with validation and local audit records.</p>
+          </article>
+          <article class="card">
+            <h3>Local skills</h3>
+            <p>Expose `~/.codex/skills` as a dedicated skill root so ChatGPT can search, read, and bundle local `SKILL.md` files.</p>
           </article>
         </div>
       </section>

@@ -12,6 +12,7 @@ ChatGPT2LocalBridge ships with OAuth plus an HTTPS tunnel because that combinati
 | Header API key | Clients that support custom headers | Depends on connector UI support |
 | URL token | Emergency compatibility | Avoid on public URLs; logs and histories can leak URLs |
 | No auth | Loopback-only local testing | Never use on a public tunnel |
+| Mixed auth | Advanced deployments with anonymous low-risk tools plus OAuth-protected privileged tools | Requires careful per-tool policy; not the default guide |
 | ChatGPT Actions | Non-MCP API integrations | Useful for REST APIs, but it is a different product surface from MCP tools |
 
 OpenAI references:

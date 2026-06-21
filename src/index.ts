@@ -107,6 +107,7 @@ function initProject(args: string[]): void {
 
   writeIfMissing(policyPath, JSON.stringify({
     allowedProjectRoots: [workspaceRoot],
+    skillRoots: [path.join(os.homedir(), '.codex', 'skills')],
     denyGlobs: [
       '**/.env',
       '**/.env.*',

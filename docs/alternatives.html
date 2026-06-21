@@ -9,7 +9,7 @@
 <body>
   <nav class="nav">
     <a class="brand" href="./index.html"><img src="./assets/logo.png" alt="">ChatGPT2LocalBridge</a>
-    <div class="nav-links"><a href="./quickstart.html">Quickstart</a><a href="./showcase.html">Showcase</a><a href="./human-tutorial.html">Human Tutorial</a><a href="./agent-computer-use.html">Agent Tutorial</a></div>
+    <div class="nav-links"><a href="./quickstart.html">Quickstart</a><a href="./authentication-modes.html">Auth Modes</a><a href="./linux-deploy.html">Linux</a><a href="./showcase.html">Showcase</a><a href="./human-tutorial.html">Human Tutorial</a><a href="./agent-computer-use.html">Agent Tutorial</a></div>
   </nav>
   <main class="section">
     <h1>OAuth and Tunnel Alternatives</h1>
@@ -18,6 +18,7 @@
       <article class="card"><h3>OAuth with CIMD</h3><p>Uses a client ID metadata document instead of dynamic client registration state. Good when the connector supports stable metadata documents.</p></article>
       <article class="card"><h3>Static bearer token</h3><p>Simpler, but harder to rotate and often unsupported by hosted connector UIs unless they expose API-key headers.</p></article>
       <article class="card"><h3>No auth</h3><p>Only acceptable for loopback-only experiments. Never use it on a public tunnel.</p></article>
+      <article class="card"><h3>Mixed auth</h3><p>Advanced mode for anonymous low-risk tools plus OAuth-protected privileged tools. It requires careful per-tool policy.</p></article>
       <article class="card"><h3>ChatGPT Actions</h3><p>Useful for REST APIs that do not need MCP tools. It is a different product surface from a remote MCP server.</p></article>
     </div>
     <h2>Tunnel options</h2>

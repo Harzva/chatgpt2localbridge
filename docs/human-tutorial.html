@@ -9,7 +9,7 @@
 <body>
   <nav class="nav">
     <a class="brand" href="./index.html"><img src="./assets/logo.png" alt="">ChatGPT2LocalBridge</a>
-    <div class="nav-links"><a href="./quickstart.html">Quickstart</a><a href="./showcase.html">Showcase</a><a href="./agent-computer-use.html">Agent Tutorial</a><a href="./alternatives.html">Alternatives</a></div>
+    <div class="nav-links"><a href="./quickstart.html">Quickstart</a><a href="./authentication-modes.html">Auth Modes</a><a href="./linux-deploy.html">Linux</a><a href="./showcase.html">Showcase</a><a href="./agent-computer-use.html">Agent Tutorial</a><a href="./alternatives.html">Alternatives</a></div>
   </nav>
   <main class="section">
     <h1>Human Setup Tutorial</h1>
@@ -23,28 +23,41 @@
     <h2>2. Run the local MCP server</h2>
     <p>Load the generated environment file and start the local HTTP transport.</p>
     <pre class="code"><code>set -a; source .env.local; set +a
-npx github:harzva/chatgpt2localbridge --http 3838</code></pre>
+    npx github:harzva/chatgpt2localbridge --http 3838</code></pre>
     <div class="screens"><img src="./assets/screenshots/02-run.png" alt="Run local MCP server screenshot"></div>
 
-    <h2>3. Check health</h2>
+    <h2>3. Review Policy Center</h2>
+    <p>Open the native app when you want to edit approved roots without hand-editing JSON. Add workspace roots narrowly, add <code>~/.codex/skills</code> as a skill root, and avoid approving the whole <code>~/.codex</code> directory.</p>
+    <pre class="code"><code>npm run macos:install
+open /Applications/ChatGPT2LocalBridge.app</code></pre>
+    <div class="screens"><img src="./assets/screenshots/09-policy-center.png" alt="Policy Center screenshot"></div>
+
+    <h2>4. Check health</h2>
     <p>The local health endpoint should return `status: ok` before you expose the bridge.</p>
     <pre class="code"><code>curl -sS http://127.0.0.1:3838/health</code></pre>
     <div class="screens"><img src="./assets/screenshots/03-health.png" alt="Health check screenshot"></div>
 
-    <h2>4. Expose a public HTTPS tunnel</h2>
+    <h2>5. Expose a public HTTPS tunnel</h2>
     <p>Hosted ChatGPT needs an HTTPS URL. Use a fixed tunnel domain when you want the connector to survive restarts.</p>
     <pre class="code"><code>ngrok http 3838 --url=your-fixed-domain.ngrok-free.dev</code></pre>
     <div class="screens"><img src="./assets/screenshots/04-tunnel.png" alt="Tunnel screenshot"></div>
 
-    <h2>5. Create the ChatGPT connector</h2>
-    <p>In ChatGPT connector settings, create a custom connector and use the public `/mcp` URL. Choose OAuth.</p>
+    <h2>6. Create the ChatGPT connector</h2>
+    <p>In ChatGPT connector settings, create a custom connector and use the public `/mcp` URL. Choose OAuth for any public tunnel. Use No Authentication only for a private, short-lived local test.</p>
     <div class="screens"><img src="./assets/screenshots/05-connector.png" alt="Create connector screenshot"></div>
 
-    <h2>6. Authorize</h2>
+    <h2>7. Authorize</h2>
     <p>When the authorization page opens, enter the unlock code from `.env.local`. Do not paste that code into public chats or screenshots.</p>
     <div class="screens"><img src="./assets/screenshots/06-authorize.png" alt="OAuth authorization screenshot"></div>
 
-    <h2>7. Use the connector</h2>
+    <h2>8. Linux connector variant</h2>
+    <p>For Linux paths, deploy a bridge on the Linux host and create a second connector such as ChatGPT2LocalBridge Linux. Keep Mac and Linux policies separate.</p>
+    <pre class="code"><code>REMOTE=linux-box \
+REMOTE_ALLOWED_ROOTS="/srv/workspace,/home/agent/projects" \
+PUBLIC_BASE_URL=https://linux-bridge.example.com \
+bash scripts/deploy-linux-bridge.sh</code></pre>
+
+    <h2>9. Use the connector</h2>
     <p>Select the ChatGPT2LocalBridge connector in ChatGPT, then ask it to list or read files inside your approved workspace.</p>
     <div class="screens"><img src="./assets/screenshots/07-success.png" alt="File list success screenshot"></div>
   </main>

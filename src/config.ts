@@ -4,6 +4,7 @@ import fs from 'node:fs';
 
 export interface BridgePolicy {
   allowedProjectRoots: string[];
+  skillRoots: string[];
   denyGlobs: string[];
   shell: {
     enabled: boolean;
@@ -34,6 +35,7 @@ export interface BridgeConfig {
     token?: string;
   };
   /** Policy controlling filesystem and shell boundaries */
+  policyPath: string;
   policy: BridgePolicy;
 }
 
@@ -62,7 +64,8 @@ export function loadConfig(): BridgeConfig {
   const dashboard = {
     token: env('DASHBOARD_TOKEN') || undefined,
   };
-  const policy = loadPolicy(env('POLICY_PATH'));
+  const policyPath = resolvePolicyPath(env('POLICY_PATH'));
+  const policy = loadPolicy(policyPath);
 
   return {
     dataDir,
@@ -71,6 +74,7 @@ export function loadConfig(): BridgeConfig {
     allowUrlTokenAuth,
     oauth,
     dashboard,
+    policyPath,
     policy,
   };
 }
@@ -85,9 +89,21 @@ function parsePositiveInt(value: string | undefined, fallback: number): number {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
 }
 
-function loadPolicy(policyPath?: string): BridgePolicy {
+function expandHome(value: string): string {
+  return value === '~' || value.startsWith('~/')
+    ? path.join(os.homedir(), value.slice(2))
+    : value;
+}
+
+function resolvePolicyPath(policyPath?: string): string {
+  return policyPath ? path.resolve(expandHome(policyPath)) : path.resolve(process.cwd(), 'bridge.policy.json');
+}
+
+function loadPolicy(policyPath: string): BridgePolicy {
+  const defaultSkillRoot = path.join(os.homedir(), '.codex', 'skills');
   const defaults: BridgePolicy = {
     allowedProjectRoots: [os.homedir()],
+    skillRoots: fs.existsSync(defaultSkillRoot) ? [defaultSkillRoot] : [],
     denyGlobs: [
       '**/.env',
       '**/.env.*',
@@ -114,13 +130,13 @@ function loadPolicy(policyPath?: string): BridgePolicy {
     },
   };
 
-  const resolved = policyPath ?? path.resolve(process.cwd(), 'bridge.policy.json');
-  if (!fs.existsSync(resolved)) return defaults;
+  if (!fs.existsSync(policyPath)) return defaults;
 
   try {
-    const raw = JSON.parse(fs.readFileSync(resolved, 'utf-8')) as Partial<BridgePolicy>;
+    const raw = JSON.parse(fs.readFileSync(policyPath, 'utf-8')) as Partial<BridgePolicy>;
     return {
       allowedProjectRoots: raw.allowedProjectRoots ?? defaults.allowedProjectRoots,
+      skillRoots: raw.skillRoots ?? defaults.skillRoots,
       denyGlobs: raw.denyGlobs ?? defaults.denyGlobs,
       shell: {
         enabled: raw.shell?.enabled ?? defaults.shell.enabled,
@@ -128,7 +144,7 @@ function loadPolicy(policyPath?: string): BridgePolicy {
       },
     };
   } catch (err) {
-    console.error(`[bridge] Failed to load policy ${resolved}:`, err);
+    console.error(`[bridge] Failed to load policy ${policyPath}:`, err);
     return defaults;
   }
 }

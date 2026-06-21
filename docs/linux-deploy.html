@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Linux Deployment - ChatGPT2LocalBridge</title>
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+  <nav class="nav">
+    <a class="brand" href="./index.html"><img src="./assets/logo.png" alt="">ChatGPT2LocalBridge</a>
+    <div class="nav-links"><a href="./quickstart.html">Quickstart</a><a href="./authentication-modes.html">Auth Modes</a><a href="./human-tutorial.html">Human Tutorial</a><a href="./agent-computer-use.html">Agent Tutorial</a><a href="./alternatives.html">Alternatives</a></div>
+  </nav>
+  <main class="section">
+    <h1>Linux Deployment</h1>
+    <p class="lede">Run the bridge on the Linux machine that owns the files, expose only the MCP endpoint through HTTPS, and create a separate ChatGPT connector for Linux.</p>
+
+    <h2>Route</h2>
+    <div class="route">
+      <div class="node">ChatGPT</div>
+      <div class="node">Linux Connector</div>
+      <div class="node">HTTPS Tunnel</div>
+      <div class="node">localhost:3838</div>
+      <div class="node">Linux MCP</div>
+      <div class="node">Approved Roots</div>
+    </div>
+
+    <h2>Deploy</h2>
+    <pre class="code"><code>REMOTE=linux-box \
+REMOTE_WORKSPACE=/srv/workspace \
+REMOTE_ALLOWED_ROOTS="/srv/workspace,/home/agent/projects" \
+REMOTE_RUNTIME=/data/chatgpt2localbridge-runtime \
+PUBLIC_BASE_URL=https://linux-bridge.example.com \
+bash scripts/deploy-linux-bridge.sh</code></pre>
+
+    <h2>Expose HTTPS</h2>
+    <pre class="code"><code>cloudflared tunnel --url http://127.0.0.1:3838 --no-autoupdate</code></pre>
+    <p>For long-running use, prefer a named Cloudflare Tunnel, fixed ngrok domain, or your own reverse proxy.</p>
+
+    <h2>Create Connector</h2>
+    <pre class="code"><code>Name: ChatGPT2LocalBridge Linux
+Server URL: https://linux-bridge.example.com/mcp
+Authentication: OAuth</code></pre>
+
+    <h2>Test</h2>
+    <pre class="code"><code>Use the ChatGPT2LocalBridge Linux connector. Call file.read_path, not cloud Python.
+
+paths=["/srv/workspace/README.md"]
+maxLines=40</code></pre>
+  </main>
+</body>
+</html>

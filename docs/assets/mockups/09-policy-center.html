@@ -1,0 +1,18 @@
+<!doctype html><html><head><meta charset="utf-8"><style>
+  body{margin:0;width:1400px;height:900px;background:#f4f7fb;color:#17202a;font-family:Inter,Arial,sans-serif;display:grid;place-items:center}
+  .frame{width:1120px;height:710px;background:#fff;border:1px solid #d8e1ec;border-radius:18px;box-shadow:0 30px 90px rgba(22,37,61,.14);overflow:hidden}
+  .top{height:72px;background:#101828;color:#fff;display:flex;align-items:center;justify-content:space-between;padding:0 28px}
+  .brand{display:flex;align-items:center;gap:12px;font-weight:800}.dot{width:16px;height:16px;border-radius:50%;background:#34c759;box-shadow:24px 0 #fbbf24,48px 0 #ef4444}
+  .content{padding:46px}.kicker{color:#1769e0;font-weight:800;text-transform:uppercase;letter-spacing:.08em;font-size:14px}
+  h1{font-size:48px;line-height:1.05;margin:12px 0 10px;letter-spacing:0}.subtitle{font-size:22px;color:#526070;margin:0 0 32px}
+  .panel{border:2px solid #d8e1ec;border-radius:16px;background:#fbfdff;padding:28px}
+  .terminal{background:#0f172a;color:#e5edf7;border-radius:14px;padding:26px;font:22px ui-monospace,SFMono-Regular,Menlo,monospace;line-height:1.75}
+  .green{color:#7ee787}.blue{color:#9cc9ff}.yellow{color:#fcd34d}.muted{color:#9aa7bd}
+  .diagram{display:flex;align-items:center;justify-content:space-between;gap:20px}.node{flex:1;height:150px;border:3px solid #1769e0;border-radius:18px;display:grid;place-items:center;text-align:center;font-weight:800;font-size:26px;background:white}.arrow{font-size:52px;color:#1769e0}
+  .form{display:grid;gap:18px}.field{display:grid;gap:8px}.label{font-weight:800}.input{height:58px;border:2px solid #cbd5e1;border-radius:12px;padding:15px 18px;font-size:22px;background:#fff}.button{margin-top:12px;height:60px;border-radius:12px;background:#1769e0;color:white;display:grid;place-items:center;font-weight:800;font-size:22px}
+  .result{display:grid;grid-template-columns:1fr 1fr;gap:22px}.tool{border:2px solid #bbd4ff;border-radius:16px;padding:22px;background:#f8fbff}.list{font-size:22px;line-height:1.9}.pill{display:inline-block;border-radius:999px;background:#e9f3ff;color:#1769e0;padding:8px 12px;font-weight:800}
+  </style></head><body><div class="frame"><div class="top"><div class="brand"><div class="dot"></div><span>ChatGPT2LocalBridge</span></div><span>public-safe tutorial mockup</span></div><div class="content"><div class="kicker">Setup walkthrough</div><h1>Policy Center</h1><p class="subtitle">Edit approved roots, skill roots, deny globs, and shell rules in the native app.</p><div class="panel"><div class="form"><div class="result"><div class="tool"><div class="pill">Allowed Roots</div><div class="list">~/Projects<br>~/Workspaces/client-app</div></div><div class="tool"><div class="pill">Skill Roots</div><div class="list">~/.codex/skills<br><span class="muted">not ~/.codex</span></div></div></div><div class="result"><div class="tool"><div class="pill">Deny Globs</div><pre>**/.env
+**/*.key
+**/.ssh/**</pre></div><div class="tool"><div class="pill">Trace</div><pre>policy.write
+skill.read
+cloud.download</pre></div></div><div class="button" style="height:48px;margin-top:0;font-size:20px">Validate and Apply</div></div></div></div></div></body></html>
