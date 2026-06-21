@@ -359,8 +359,13 @@ function validateAuthorizeParams(
   const scope = params.get('scope') ?? config.oauth.scopes.join(' ');
 
   if (responseType !== 'code') return { ok: false, error: 'response_type must be code.' };
-  if (!clientId || !store.clients[clientId]) return { ok: false, error: 'Unknown OAuth client.' };
-  if (!redirectUri || !store.clients[clientId].redirect_uris.includes(redirectUri)) {
+  if (!clientId || !store.clients[clientId]) {
+    const recovered = recoverUnknownDynamicClient(params, config, store);
+    if (!recovered) return { ok: false, error: 'Unknown OAuth client.' };
+  }
+  const client = clientId ? store.clients[clientId] : undefined;
+  if (!client) return { ok: false, error: 'Unknown OAuth client.' };
+  if (!redirectUri || !client.redirect_uris.includes(redirectUri)) {
     return { ok: false, error: 'redirect_uri is not registered for this client.' };
   }
   if (!codeChallenge || codeChallengeMethod !== 'S256') {
@@ -374,6 +379,39 @@ function validateAuthorizeParams(
   }
 
   return { ok: true };
+}
+
+function recoverUnknownDynamicClient(
+  params: URLSearchParams,
+  config: BridgeConfig,
+  store: OAuthStoreData,
+): boolean {
+  const clientId = params.get('client_id');
+  const redirectUri = params.get('redirect_uri');
+  const responseType = params.get('response_type');
+  const codeChallenge = params.get('code_challenge');
+  const codeChallengeMethod = params.get('code_challenge_method');
+  const scope = params.get('scope') ?? config.oauth.scopes.join(' ');
+
+  if (!clientId?.startsWith('dcr_')) return false;
+  if (responseType !== 'code') return false;
+  if (!redirectUri || !isTrustedChatGPTRedirectUri(redirectUri)) return false;
+  if (!codeChallenge || codeChallengeMethod !== 'S256') return false;
+  if (!requestedScopesAllowed(scope, config.oauth.scopes)) return false;
+
+  const now = Math.floor(Date.now() / 1000);
+  store.clients[clientId] = {
+    client_id: clientId,
+    client_id_issued_at: now,
+    client_name: 'ChatGPT',
+    redirect_uris: [redirectUri],
+    grant_types: ['authorization_code'],
+    response_types: ['code'],
+    token_endpoint_auth_method: 'none',
+    scope: normalizeRequestedScope(scope, config.oauth.scopes),
+  };
+  saveStore(config, store);
+  return true;
 }
 
 async function parseRequestBody(req: IncomingMessage): Promise<ParsedRequestBody> {
@@ -520,6 +558,16 @@ function asStringArray(value: unknown): string[] {
 function isHttpsUrl(value: string): boolean {
   try {
     return new URL(value).protocol === 'https:';
+  } catch {
+    return false;
+  }
+}
+
+function isTrustedChatGPTRedirectUri(value: string): boolean {
+  try {
+    const url = new URL(value);
+    if (url.protocol !== 'https:') return false;
+    return url.hostname === 'chatgpt.com' || url.hostname.endsWith('.chatgpt.com');
   } catch {
     return false;
   }

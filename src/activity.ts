@@ -7,10 +7,15 @@ export interface ToolCallRecord {
   ts: string;
   tool: string;
   status: 'started' | 'ok' | 'error';
+  sessionId?: string;
+  taskId?: string;
+  projectPath?: string;
+  connectorProfile?: string;
   durationMs?: number;
   args?: Record<string, unknown>;
   result?: Record<string, unknown>;
   error?: string;
+  requestContext?: Record<string, string>;
 }
 
 export interface AuditRecord {

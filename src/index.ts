@@ -53,7 +53,7 @@ async function main() {
   process.on('SIGINT', () => shutdown('SIGINT'));
   process.on('SIGTERM', () => shutdown('SIGTERM'));
 
-  console.error(`[bridge] ChatGPT2LocalBridge v0.1.0 starting`);
+  console.error(`[bridge] ChatGPT2LocalBridge v0.1.1 starting`);
   console.error(`[bridge] Data dir: ${config.dataDir}`);
   if (httpMode) console.error(`[bridge] Local console: http://127.0.0.1:${httpPort}/app`);
 

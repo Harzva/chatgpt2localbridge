@@ -26,6 +26,7 @@ const env = {
   LOCALBRIDGE_LOG_DIR: path.join(tmpDir, 'logs'),
   LOCALBRIDGE_POLICY_PATH: policyPath,
   LOCALBRIDGE_OAUTH_ENABLED: '0',
+  LOCALBRIDGE_TOOL_PROFILE: 'debug',
 };
 
 try {

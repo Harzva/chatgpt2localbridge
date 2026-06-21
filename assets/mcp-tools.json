@@ -1,8 +1,40 @@
 {
-  "generatedAt": "2026-06-21T05:28:30.530Z",
+  "generatedAt": "2026-06-21T14:43:12.000Z",
   "source": "MCP tools/list",
-  "count": 48,
+  "count": 64,
   "tools": [
+    {
+      "name": "bridge_health",
+      "title": "Bridge Health",
+      "description": "ChatGPT-compatible alias for bridge.health. Check local and optional public bridge health endpoints.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "includePublic": {
+            "type": "boolean",
+            "default": true
+          },
+          "publicBaseUrl": {
+            "type": "string",
+            "format": "uri",
+            "default": "http://127.0.0.1:3838"
+          },
+          "timeoutMs": {
+            "type": "integer",
+            "minimum": 500,
+            "maximum": 10000,
+            "default": 5000
+          }
+        },
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "openWorldHint": true
+      }
+    },
     {
       "name": "bridge.activity",
       "title": "Bridge Activity",
@@ -43,7 +75,7 @@
           "publicBaseUrl": {
             "type": "string",
             "format": "uri",
-            "default": "https://example.ngrok-free.app"
+            "default": "http://127.0.0.1:3838"
           },
           "timeoutMs": {
             "type": "integer",
@@ -265,6 +297,162 @@
       }
     },
     {
+      "name": "codex.cancel",
+      "title": "Cancel Codex Runner Task",
+      "description": "Cancel a running Codex Runner task by task id.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "taskId": {
+            "type": "string"
+          },
+          "confirm": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "taskId",
+          "confirm"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "codex.result",
+      "title": "Codex Runner Result",
+      "description": "Return the current task result envelope for the native Codex Runner view. This is a stable high-level result shape; full CLI diff/test attachment lands in the next runner phase.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "taskId": {
+            "type": "string"
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 20,
+            "default": 5
+          }
+        },
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "codex.status",
+      "title": "Codex Runner Status",
+      "description": "Read one Codex Runner task or list recent task records for the native app queue.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "taskId": {
+            "type": "string"
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 20
+          }
+        },
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "codex.task_start",
+      "title": "Start Codex Runner Task",
+      "description": "High-level ChatGPT entrypoint for local Codex work. Creates a persisted task record that the native app can show in Codex Runner; prefer this over raw shell.exec for broad local work.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "task": {
+            "type": "string"
+          },
+          "workspace": {
+            "type": "string"
+          },
+          "projectPath": {
+            "type": "string"
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "normal",
+              "debug"
+            ],
+            "default": "normal"
+          },
+          "timeoutMs": {
+            "type": "integer",
+            "minimum": 1000,
+            "maximum": 600000,
+            "default": 120000
+          }
+        },
+        "required": [
+          "task"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "file_list",
+      "title": "List Directory",
+      "description": "ChatGPT-compatible alias for file.list. List files and directories inside an approved local workspace.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "projectPath": {
+            "type": "string"
+          },
+          "dir": {
+            "type": "string",
+            "default": "."
+          },
+          "recursive": {
+            "type": "boolean",
+            "default": false
+          },
+          "maxEntries": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 200
+          }
+        },
+        "required": [
+          "projectPath"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "openWorldHint": false
+      }
+    },
+    {
       "name": "file_read_path",
       "title": "Read Absolute Local Paths",
       "description": "Compatibility alias for file.read_path. Read one or more absolute text file paths from approved local/Linux/Mac workspace roots. Use this when ChatGPT asks for file_read_path or when dotted MCP tool names are not available in the current client.",
@@ -295,7 +483,43 @@
         "$schema": "http://json-schema.org/draft-07/schema#"
       },
       "annotations": {
-        "readOnlyHint": true,
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "file_write",
+      "title": "Write File",
+      "description": "Compatibility alias for file.write. Create or overwrite a text file inside a project.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "projectPath": {
+            "type": "string"
+          },
+          "file": {
+            "type": "string"
+          },
+          "content": {
+            "type": "string"
+          },
+          "createDirs": {
+            "type": "boolean",
+            "default": true
+          }
+        },
+        "required": [
+          "projectPath",
+          "file",
+          "content"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
         "openWorldHint": false
       }
     },
@@ -712,6 +936,279 @@
       }
     },
     {
+      "name": "local_bundle_dir",
+      "title": "Bundle Local Directory",
+      "description": "Bundle an approved local directory summary plus selected text files in one call. Use this when the user wants multiple local files or a compact project snapshot.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "projectPath": {
+            "type": "string",
+            "description": "Absolute approved local workspace root."
+          },
+          "dir": {
+            "type": "string",
+            "default": ".",
+            "description": "Relative directory inside projectPath."
+          },
+          "files": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 40,
+            "default": [],
+            "description": "Optional relative files to include with content."
+          },
+          "recursive": {
+            "type": "boolean",
+            "default": false
+          },
+          "maxEntries": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 120
+          },
+          "maxFileBytes": {
+            "type": "integer",
+            "minimum": 100,
+            "maximum": 2097152,
+            "default": 120000
+          },
+          "maxTotalBytes": {
+            "type": "integer",
+            "minimum": 1000,
+            "maximum": 4194304,
+            "default": 750000
+          }
+        },
+        "required": [
+          "projectPath"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "local_list_dir",
+      "title": "List Local Directory",
+      "description": "Use this first when the user asks whether ChatGPT can see a local path. It lists an approved local directory only; it does not read file contents.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "projectPath": {
+            "type": "string",
+            "description": "Absolute approved local directory path, such as /path/to/project or /Users/name/project."
+          },
+          "dir": {
+            "type": "string",
+            "default": ".",
+            "description": "Subdirectory inside projectPath. Use \".\" for the directory itself."
+          },
+          "recursive": {
+            "type": "boolean",
+            "default": false
+          },
+          "maxEntries": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 200
+          }
+        },
+        "required": [
+          "projectPath"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "local_read_file",
+      "title": "Read Local File",
+      "description": "Read one approved local text file. Use this only when the user asks to read a specific file, not when they ask to inspect or list a directory.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "projectPath": {
+            "type": "string",
+            "description": "Absolute approved local workspace root."
+          },
+          "file": {
+            "type": "string",
+            "description": "Relative file path inside projectPath. Do not pass a directory."
+          },
+          "maxLines": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 5000,
+            "default": 1000
+          }
+        },
+        "required": [
+          "projectPath",
+          "file"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "local_workspace_action",
+      "title": "Local Workspace Action",
+      "description": "Preferred single entrypoint for ChatGPT. Choose action=list_dir for directories, read_file for one file, write_file to save one text file, or bundle_dir for a directory summary plus selected files.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "action": {
+            "type": "string",
+            "enum": [
+              "list_dir",
+              "read_file",
+              "write_file",
+              "bundle_dir"
+            ]
+          },
+          "projectPath": {
+            "type": "string",
+            "description": "Absolute approved local workspace root."
+          },
+          "path": {
+            "type": "string",
+            "default": ".",
+            "description": "Relative directory or file path inside projectPath."
+          },
+          "files": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 40,
+            "default": [],
+            "description": "Only used by bundle_dir. Optional relative files to include with content."
+          },
+          "content": {
+            "type": "string",
+            "description": "Only used by write_file. Full text content to write."
+          },
+          "createDirs": {
+            "type": "boolean",
+            "default": true,
+            "description": "Only used by write_file. Create parent directories when missing."
+          },
+          "recursive": {
+            "type": "boolean",
+            "default": false
+          },
+          "maxEntries": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 120
+          },
+          "maxLines": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 5000,
+            "default": 1000
+          },
+          "maxFileBytes": {
+            "type": "integer",
+            "minimum": 100,
+            "maximum": 2097152,
+            "default": 120000
+          },
+          "maxTotalBytes": {
+            "type": "integer",
+            "minimum": 1000,
+            "maximum": 4194304,
+            "default": 750000
+          }
+        },
+        "required": [
+          "action",
+          "projectPath"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "local_write_file",
+      "title": "Write Local File",
+      "description": "Create or overwrite one approved local text file. Use this when the user explicitly asks to save, create, or update a file in an approved local workspace.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "projectPath": {
+            "type": "string",
+            "description": "Absolute approved local workspace root."
+          },
+          "file": {
+            "type": "string",
+            "description": "Relative file path inside projectPath. Do not pass an absolute path."
+          },
+          "content": {
+            "type": "string",
+            "description": "Full text content to write."
+          },
+          "createDirs": {
+            "type": "boolean",
+            "default": true,
+            "description": "Create parent directories when missing."
+          }
+        },
+        "required": [
+          "projectPath",
+          "file",
+          "content"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "policy_read",
+      "title": "Read Bridge Policy",
+      "description": "ChatGPT-compatible alias for policy.read. Read approved roots, skill roots, deny globs, and shell rules.",
+      "inputSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "type": "object",
+        "properties": {}
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "openWorldHint": false
+      }
+    },
+    {
       "name": "policy.read",
       "title": "Read Bridge Policy",
       "description": "Read the active local safety policy: approved workspace roots, skill roots, denied file globs, and shell rules.",
@@ -1019,7 +1516,8 @@
         "$schema": "http://json-schema.org/draft-07/schema#"
       },
       "annotations": {
-        "readOnlyHint": true,
+        "readOnlyHint": false,
+        "destructiveHint": false,
         "openWorldHint": false
       }
     },
@@ -1425,6 +1923,73 @@
       "annotations": {
         "readOnlyHint": false,
         "openWorldHint": true
+      }
+    },
+    {
+      "name": "trace.session_current",
+      "title": "Get Current Trace Session",
+      "description": "Read the current active trace session used by subsequent tool calls.",
+      "inputSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "type": "object",
+        "properties": {}
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "trace.session_end",
+      "title": "End Trace Session",
+      "description": "End the currently active trace session. Provide sessionId to end a specific session.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "sessionId": {
+            "type": "string"
+          },
+          "note": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "trace.session_start",
+      "title": "Start Trace Session",
+      "description": "Create a logical trace session id for grouping subsequent tool calls by conversation/task/project.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string"
+          },
+          "projectPath": {
+            "type": "string"
+          },
+          "connectorProfile": {
+            "type": "string"
+          },
+          "taskId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "title"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "openWorldHint": false
       }
     },
     {

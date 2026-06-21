@@ -19,7 +19,40 @@ struct Config {
     public_base_url: Option<String>,
     dashboard_token: Option<String>,
     oauth_enabled: bool,
+    tool_profile: ToolProfile,
     policy: Policy,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+enum ToolProfile {
+    Normal,
+    Debug,
+    CodexRunnerOnly,
+}
+
+impl ToolProfile {
+    fn from_env(value: Option<String>) -> Self {
+        match value
+            .unwrap_or_else(|| "normal".to_string())
+            .trim()
+            .to_ascii_lowercase()
+            .as_str()
+        {
+            "debug" | "all" => Self::Debug,
+            "codex" | "codex-runner" | "codex-runner-only" | "codexrunner" => {
+                Self::CodexRunnerOnly
+            }
+            _ => Self::Normal,
+        }
+    }
+
+    fn as_str(&self) -> &'static str {
+        match self {
+            Self::Normal => "normal",
+            Self::Debug => "debug",
+            Self::CodexRunnerOnly => "codex-runner-only",
+        }
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -378,6 +411,7 @@ fn load_config() -> Config {
             env_prefixed("OAUTH_ENABLED").as_deref(),
             Some("1" | "true" | "TRUE")
         ),
+        tool_profile: ToolProfile::from_env(env_prefixed("TOOL_PROFILE")),
         policy: load_policy(&policy_path),
     }
 }
@@ -449,6 +483,7 @@ fn status_json(config: &Config) -> String {
         "skillRoots": config.policy.skill_roots,
         "denyGlobs": config.policy.deny_globs,
         "shellEnabled": config.policy.shell_enabled,
+        "toolProfile": config.tool_profile.as_str(),
         "dashboardTokenConfigured": config.dashboard_token.is_some()
     })
     .to_string()
@@ -519,7 +554,7 @@ fn handle_mcp(body: &str, config: &Config) -> String {
             "jsonrpc": "2.0",
             "id": id,
             "result": {
-                "tools": mcp_tools_value()
+                "tools": mcp_tools_value(&config.tool_profile)
             }
         })
         .to_string(),
@@ -532,13 +567,17 @@ fn handle_mcp(body: &str, config: &Config) -> String {
                 .unwrap_or_else(|| json!({}));
 
             append_tool_record(config, name, "started", None, &args, None, None);
-            let result = match name {
+            let result = if !tool_allowed(&config.tool_profile, name) {
+                Err(format!("Tool is hidden by {} profile: {name}", config.tool_profile.as_str()))
+            } else {
+                match name {
                 "bridge.health" => Ok(mcp_tool_result(
                     "local: ok 200\nrust: ok",
                     json!({
                         "status": "ok",
                         "service": SERVICE,
-                        "version": VERSION
+                        "version": VERSION,
+                        "toolProfile": config.tool_profile.as_str()
                     }),
                 )),
                 "bridge.activity" => Ok(mcp_tool_result(
@@ -556,6 +595,7 @@ fn handle_mcp(body: &str, config: &Config) -> String {
                 }),
                 "" => Err("tools/call params.name is required".to_string()),
                 _ => Err(format!("Unknown Rust MCP smoke tool: {name}")),
+                }
             };
 
             match result {
@@ -599,48 +639,76 @@ fn handle_mcp(body: &str, config: &Config) -> String {
     }
 }
 
-fn mcp_tools_value() -> Value {
-    json!([
+fn mcp_tools_value(profile: &ToolProfile) -> Value {
+    let tools = vec![
         {
-            "name": "bridge.health",
-            "description": "Rust smoke health check",
-            "inputSchema": {
-                "type": "object",
-                "properties": {}
-            }
+            json!({
+                "name": "bridge.health",
+                "description": "Rust smoke health check",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {}
+                }
+            })
         },
         {
-            "name": "bridge.activity",
-            "description": "Read Rust/Node bridge activity files",
-            "inputSchema": {
-                "type": "object",
-                "properties": {}
-            }
+            json!({
+                "name": "bridge.activity",
+                "description": "Read Rust/Node bridge activity files",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {}
+                }
+            })
         },
         {
-            "name": "file.list",
-            "description": "List files in an approved project root",
-            "inputSchema": {
-                "type": "object",
-                "properties": {
-                    "projectPath": {
-                        "type": "string"
+            json!({
+                "name": "file.list",
+                "description": "List files in an approved project root",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "projectPath": {
+                            "type": "string"
+                        },
+                        "dir": {
+                            "type": "string",
+                            "default": "."
+                        },
+                        "maxEntries": {
+                            "type": "number",
+                            "default": 50,
+                            "minimum": 1,
+                            "maximum": 500
+                        }
                     },
-                    "dir": {
-                        "type": "string",
-                        "default": "."
-                    },
-                    "maxEntries": {
-                        "type": "number",
-                        "default": 50,
-                        "minimum": 1,
-                        "maximum": 500
-                    }
-                },
-                "required": ["projectPath"]
-            }
+                    "required": ["projectPath"]
+                }
+            })
         }
-    ])
+    ];
+
+    Value::Array(
+        tools
+            .into_iter()
+            .filter(|tool| {
+                tool.get("name")
+                    .and_then(Value::as_str)
+                    .map(|name| tool_allowed(profile, name))
+                    .unwrap_or(false)
+            })
+            .collect(),
+    )
+}
+
+fn tool_allowed(profile: &ToolProfile, name: &str) -> bool {
+    match profile {
+        ToolProfile::Debug | ToolProfile::Normal => matches!(
+            name,
+            "bridge.health" | "bridge.activity" | "file.list"
+        ),
+        ToolProfile::CodexRunnerOnly => matches!(name, "bridge.health" | "bridge.activity"),
+    }
 }
 
 fn mcp_tool_result(text: &str, structured: Value) -> Value {
@@ -1030,6 +1098,40 @@ mod tests {
         assert!(path_denied(Path::new("/repo/key.pem"), &deny));
         assert!(path_denied(Path::new("/repo/.ssh/config"), &deny));
         assert!(!path_denied(Path::new("/repo/src/main.rs"), &deny));
+    }
+
+    #[test]
+    fn parses_tool_profile_aliases() {
+        assert_eq!(ToolProfile::from_env(None), ToolProfile::Normal);
+        assert_eq!(
+            ToolProfile::from_env(Some("debug".to_string())),
+            ToolProfile::Debug
+        );
+        assert_eq!(
+            ToolProfile::from_env(Some("codex-runner-only".to_string())),
+            ToolProfile::CodexRunnerOnly
+        );
+        assert_eq!(
+            ToolProfile::from_env(Some("codexrunner".to_string())),
+            ToolProfile::CodexRunnerOnly
+        );
+    }
+
+    #[test]
+    fn filters_rust_tools_by_profile() {
+        assert!(tool_allowed(&ToolProfile::Normal, "file.list"));
+        assert!(tool_allowed(&ToolProfile::Debug, "file.list"));
+        assert!(!tool_allowed(&ToolProfile::CodexRunnerOnly, "file.list"));
+        assert!(tool_allowed(&ToolProfile::CodexRunnerOnly, "bridge.health"));
+
+        let tools = mcp_tools_value(&ToolProfile::CodexRunnerOnly);
+        let names = tools
+            .as_array()
+            .expect("tools array")
+            .iter()
+            .filter_map(|tool| tool.get("name").and_then(Value::as_str))
+            .collect::<Vec<_>>();
+        assert_eq!(names, vec!["bridge.health", "bridge.activity"]);
     }
 
     #[test]

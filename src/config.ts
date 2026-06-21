@@ -12,6 +12,8 @@ export interface BridgePolicy {
   };
 }
 
+export type BridgeToolProfile = 'normal' | 'debug' | 'codex-runner-only' | 'chatgpt-app';
+
 export interface BridgeConfig {
   /** Where to store run data on disk */
   dataDir: string;
@@ -37,6 +39,8 @@ export interface BridgeConfig {
   /** Policy controlling filesystem and shell boundaries */
   policyPath: string;
   policy: BridgePolicy;
+  /** Controls which MCP tools are exposed to hosted clients */
+  toolProfile: BridgeToolProfile;
 }
 
 export function loadConfig(): BridgeConfig {
@@ -66,6 +70,7 @@ export function loadConfig(): BridgeConfig {
   };
   const policyPath = resolvePolicyPath(env('POLICY_PATH'));
   const policy = loadPolicy(policyPath);
+  const toolProfile = parseToolProfile(env('TOOL_PROFILE'));
 
   return {
     dataDir,
@@ -76,6 +81,7 @@ export function loadConfig(): BridgeConfig {
     dashboard,
     policyPath,
     policy,
+    toolProfile,
   };
 }
 
@@ -87,6 +93,27 @@ function parsePositiveInt(value: string | undefined, fallback: number): number {
   if (!value) return fallback;
   const parsed = Number.parseInt(value, 10);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+function parseToolProfile(value: string | undefined): BridgeToolProfile {
+  const normalized = (value ?? 'normal').trim().toLowerCase();
+  switch (normalized) {
+    case 'debug':
+    case 'all':
+      return 'debug';
+    case 'codex':
+    case 'codex-runner':
+    case 'codex-runner-only':
+    case 'codexrunner':
+      return 'codex-runner-only';
+    case 'chatgpt':
+    case 'chatgpt-app':
+    case 'app':
+      return 'chatgpt-app';
+    case 'normal':
+    default:
+      return 'normal';
+  }
 }
 
 function expandHome(value: string): string {

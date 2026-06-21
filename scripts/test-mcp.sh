@@ -38,7 +38,7 @@ JSON
 echo "[test] build"
 npm run build >/dev/null
 
-echo "[test] stdio tools/list"
+echo "[test] stdio tools/list normal profile"
 response="$(
   printf '%s\n' \
     '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"smoke","version":"0.1.0"}}}' \
@@ -51,11 +51,204 @@ printf '%s\n' "$response" | node -e '
 const fs = require("node:fs");
 const lines = fs.readFileSync(0, "utf8").trim().split(/\n+/).filter(Boolean).map(JSON.parse);
 const tools = lines.find((line) => line.id === 2)?.result?.tools?.map((tool) => tool.name) ?? [];
-for (const name of ["project.snapshot", "project.bundle", "policy.read", "policy.validate", "skill.list", "skill.search", "skill.read", "skill.bundle", "skill.route", "file.list", "file.read_path", "file_read_path", "code.read", "shell.exec", "bridge.health", "bridge.activity", "cloud.download"]) {
+for (const name of ["project.snapshot", "project.bundle", "policy.read", "policy.validate", "skill.list", "skill.search", "skill.read", "skill.bundle", "skill.route", "file.list", "file.read_path", "file_read_path", "code.read", "bridge.health", "bridge.activity", "cloud.download", "codex.task_start", "codex.status", "codex.result", "codex.cancel"]) {
   if (!tools.includes(name)) throw new Error(`missing tool: ${name}`);
 }
-console.log(`[test] tools ok (${tools.length})`);
+for (const name of ["shell.exec", "process.start", "file.write", "file.delete", "service.restart"]) {
+  if (tools.includes(name)) throw new Error(`normal profile exposed low-level tool: ${name}`);
+}
+console.log(`[test] normal tools ok (${tools.length})`);
 '
+
+echo "[test] stdio tools/list chatgpt-app profile"
+chatgpt_app_response="$(
+  printf '%s\n' \
+    '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"chatgpt-app-smoke","version":"0.1.0"}}}' \
+    '{"jsonrpc":"2.0","method":"notifications/initialized","params":{}}' \
+    '{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}' \
+  | LOCALBRIDGE_TOOL_PROFILE=chatgpt-app LOCALBRIDGE_DATA_DIR="$TMPDIR/chatgpt-app-data" LOCALBRIDGE_LOG_DIR="$TMPDIR/chatgpt-app-logs" LOCALBRIDGE_POLICY_PATH="$TMPDIR/bridge.policy.json" node dist/index.js 2>/dev/null
+)"
+
+printf '%s\n' "$chatgpt_app_response" | node -e '
+const fs = require("node:fs");
+const lines = fs.readFileSync(0, "utf8").trim().split(/\n+/).filter(Boolean).map(JSON.parse);
+const tools = lines.find((line) => line.id === 2)?.result?.tools?.map((tool) => tool.name) ?? [];
+const expected = ["bridge_health", "policy_read", "file_list", "file_read_path", "file_write", "local_list_dir", "local_read_file", "local_write_file", "local_bundle_dir", "local_workspace_action"];
+for (const name of expected) {
+  if (!tools.includes(name)) throw new Error(`chatgpt-app profile missing tool: ${name}`);
+}
+for (const name of ["file.read_path", "shell.exec", "file.write", "process.start", "service.restart"]) {
+  if (tools.includes(name)) throw new Error(`chatgpt-app profile exposed unsafe or ambiguous tool: ${name}`);
+}
+if (tools.length !== expected.length) throw new Error(`chatgpt-app profile expected ${expected.length} tools, got ${tools.length}: ${tools.join(", ")}`);
+console.log(`[test] chatgpt-app tools ok (${tools.length})`);
+'
+
+echo "[test] chatgpt-app file_write"
+file_write_response="$(
+  printf '%s\n' \
+    '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"chatgpt-app-write-smoke","version":"0.1.0"}}}' \
+    '{"jsonrpc":"2.0","method":"notifications/initialized","params":{}}' \
+    "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/call\",\"params\":{\"name\":\"file_write\",\"arguments\":{\"projectPath\":\"$TMPDIR/workspace\",\"file\":\"chatgpt-app/hello.py\",\"content\":\"print('hello from chatgpt-app')\\n\",\"createDirs\":true}}}" \
+  | LOCALBRIDGE_TOOL_PROFILE=chatgpt-app LOCALBRIDGE_DATA_DIR="$TMPDIR/chatgpt-app-data" LOCALBRIDGE_LOG_DIR="$TMPDIR/chatgpt-app-logs" LOCALBRIDGE_POLICY_PATH="$TMPDIR/bridge.policy.json" node dist/index.js 2>/dev/null
+)"
+
+printf '%s\n' "$file_write_response" | node -e '
+const fs = require("node:fs");
+const lines = fs.readFileSync(0, "utf8").trim().split(/\n+/).filter(Boolean).map(JSON.parse);
+const result = lines.find((line) => line.id === 2)?.result;
+if (!result?.content?.[0]?.text?.includes("Wrote chatgpt-app/hello.py")) {
+  throw new Error(`unexpected file_write result: ${JSON.stringify(result)}`);
+}
+console.log("[test] chatgpt-app file_write ok");
+'
+
+grep -q "hello from chatgpt-app" "$TMPDIR/workspace/chatgpt-app/hello.py"
+
+echo "[test] chatgpt-app local_write_file"
+local_write_response="$(
+  printf '%s\n' \
+    '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"chatgpt-app-local-write-smoke","version":"0.1.0"}}}' \
+    '{"jsonrpc":"2.0","method":"notifications/initialized","params":{}}' \
+    "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/call\",\"params\":{\"name\":\"local_write_file\",\"arguments\":{\"projectPath\":\"$TMPDIR/workspace\",\"file\":\"chatgpt-app/local-write.txt\",\"content\":\"hello from local_write_file\\n\",\"createDirs\":true}}}" \
+  | LOCALBRIDGE_TOOL_PROFILE=chatgpt-app LOCALBRIDGE_DATA_DIR="$TMPDIR/chatgpt-app-data" LOCALBRIDGE_LOG_DIR="$TMPDIR/chatgpt-app-logs" LOCALBRIDGE_POLICY_PATH="$TMPDIR/bridge.policy.json" node dist/index.js 2>/dev/null
+)"
+
+printf '%s\n' "$local_write_response" | node -e '
+const fs = require("node:fs");
+const lines = fs.readFileSync(0, "utf8").trim().split(/\n+/).filter(Boolean).map(JSON.parse);
+const result = lines.find((line) => line.id === 2)?.result;
+if (!result?.content?.[0]?.text?.includes("Wrote chatgpt-app/local-write.txt")) {
+  throw new Error(`unexpected local_write_file result: ${JSON.stringify(result)}`);
+}
+console.log("[test] chatgpt-app local_write_file ok");
+'
+
+grep -q "hello from local_write_file" "$TMPDIR/workspace/chatgpt-app/local-write.txt"
+
+echo "[test] chatgpt-app local_workspace_action write_file"
+workspace_action_write_response="$(
+  printf '%s\n' \
+    '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"chatgpt-app-workspace-action-write-smoke","version":"0.1.0"}}}' \
+    '{"jsonrpc":"2.0","method":"notifications/initialized","params":{}}' \
+    "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/call\",\"params\":{\"name\":\"local_workspace_action\",\"arguments\":{\"action\":\"write_file\",\"projectPath\":\"$TMPDIR/workspace\",\"path\":\"chatgpt-app/action-write.txt\",\"content\":\"hello from workspace action\\n\",\"createDirs\":true}}}" \
+  | LOCALBRIDGE_TOOL_PROFILE=chatgpt-app LOCALBRIDGE_DATA_DIR="$TMPDIR/chatgpt-app-data" LOCALBRIDGE_LOG_DIR="$TMPDIR/chatgpt-app-logs" LOCALBRIDGE_POLICY_PATH="$TMPDIR/bridge.policy.json" node dist/index.js 2>/dev/null
+)"
+
+printf '%s\n' "$workspace_action_write_response" | node -e '
+const fs = require("node:fs");
+const lines = fs.readFileSync(0, "utf8").trim().split(/\n+/).filter(Boolean).map(JSON.parse);
+const result = lines.find((line) => line.id === 2)?.result;
+if (!result?.content?.[0]?.text?.includes("Wrote chatgpt-app/action-write.txt")) {
+  throw new Error(`unexpected local_workspace_action write result: ${JSON.stringify(result)}`);
+}
+console.log("[test] chatgpt-app local_workspace_action write_file ok");
+'
+
+grep -q "hello from workspace action" "$TMPDIR/workspace/chatgpt-app/action-write.txt"
+
+echo "[test] stdio tools/list debug profile"
+debug_response="$(
+  printf '%s\n' \
+    '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"debug-smoke","version":"0.1.0"}}}' \
+    '{"jsonrpc":"2.0","method":"notifications/initialized","params":{}}' \
+    '{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}' \
+  | LOCALBRIDGE_TOOL_PROFILE=debug LOCALBRIDGE_DATA_DIR="$TMPDIR/debug-data" LOCALBRIDGE_LOG_DIR="$TMPDIR/debug-logs" LOCALBRIDGE_POLICY_PATH="$TMPDIR/bridge.policy.json" node dist/index.js 2>/dev/null
+)"
+
+printf '%s\n' "$debug_response" | node -e '
+const fs = require("node:fs");
+const lines = fs.readFileSync(0, "utf8").trim().split(/\n+/).filter(Boolean).map(JSON.parse);
+const tools = lines.find((line) => line.id === 2)?.result?.tools?.map((tool) => tool.name) ?? [];
+for (const name of ["shell.exec", "process.start", "file.write", "file.delete", "service.restart"]) {
+  if (!tools.includes(name)) throw new Error(`debug profile missing low-level tool: ${name}`);
+}
+console.log(`[test] debug tools ok (${tools.length})`);
+'
+
+echo "[test] stdio tools/list codex-runner-only profile"
+codex_only_response="$(
+  printf '%s\n' \
+    '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"codex-only-smoke","version":"0.1.0"}}}' \
+    '{"jsonrpc":"2.0","method":"notifications/initialized","params":{}}' \
+    '{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}' \
+  | LOCALBRIDGE_TOOL_PROFILE=codex-runner-only LOCALBRIDGE_DATA_DIR="$TMPDIR/codex-only-data" LOCALBRIDGE_LOG_DIR="$TMPDIR/codex-only-logs" LOCALBRIDGE_POLICY_PATH="$TMPDIR/bridge.policy.json" node dist/index.js 2>/dev/null
+)"
+
+printf '%s\n' "$codex_only_response" | node -e '
+const fs = require("node:fs");
+const lines = fs.readFileSync(0, "utf8").trim().split(/\n+/).filter(Boolean).map(JSON.parse);
+const tools = lines.find((line) => line.id === 2)?.result?.tools?.map((tool) => tool.name) ?? [];
+for (const name of ["codex.task_start", "codex.status", "codex.result", "codex.cancel", "bridge.health", "bridge.activity", "policy.read"]) {
+  if (!tools.includes(name)) throw new Error(`codex-only profile missing tool: ${name}`);
+}
+for (const name of ["project.bundle", "file.read_path", "shell.exec", "file.write"]) {
+  if (tools.includes(name)) throw new Error(`codex-only profile exposed tool: ${name}`);
+}
+console.log(`[test] codex-only tools ok (${tools.length})`);
+'
+
+echo "[test] codex runner"
+cat >"$TMPDIR/fake-codex" <<'SH'
+#!/usr/bin/env bash
+set -euo pipefail
+out=""
+prev=""
+for arg in "$@"; do
+  if [[ "$prev" == "--output-last-message" ]]; then
+    out="$arg"
+  fi
+  prev="$arg"
+done
+echo '{"event":"fake-codex","message":"tests passed"}'
+if [[ -n "$out" ]]; then
+  printf 'fake codex complete\ntests passed\n' >"$out"
+fi
+SH
+chmod +x "$TMPDIR/fake-codex"
+
+codex_response="$(
+  printf '%s\n' \
+    '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"codex-smoke","version":"0.1.0"}}}' \
+    '{"jsonrpc":"2.0","method":"notifications/initialized","params":{}}' \
+    "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/call\",\"params\":{\"name\":\"codex.task_start\",\"arguments\":{\"projectPath\":\"$TMPDIR/workspace\",\"task\":\"fake codex smoke\",\"timeoutMs\":5000}}}" \
+  | CODEX_BIN="$TMPDIR/fake-codex" LOCALBRIDGE_DATA_DIR="$TMPDIR/codex-data" LOCALBRIDGE_LOG_DIR="$TMPDIR/codex-logs" LOCALBRIDGE_POLICY_PATH="$TMPDIR/bridge.policy.json" node dist/index.js 2>/dev/null
+)"
+
+codex_task_id="$(printf '%s\n' "$codex_response" | node -e '
+const fs = require("node:fs");
+const lines = fs.readFileSync(0, "utf8").trim().split(/\n+/).filter(Boolean).map(JSON.parse);
+const started = lines.find((line) => line.id === 2)?.result?.structuredContent;
+if (!started?.id || !started?.command?.includes(" exec --json --cd ") || !started?.logFile) {
+  throw new Error(`unexpected codex.task_start result: ${JSON.stringify(started)}`);
+}
+process.stdout.write(started.id);
+')"
+
+for _ in {1..20}; do
+  if node -e '
+const fs = require("node:fs");
+const file = process.argv[1];
+const id = process.argv[2];
+const tasks = JSON.parse(fs.readFileSync(file, "utf8"));
+const task = tasks.find((item) => item.id === id);
+if (!task || !["success", "running"].includes(task.status) || !task.logFile || !task.resultFile) process.exit(1);
+' "$TMPDIR/codex-data/tasks.json" "$codex_task_id"; then
+    break
+  fi
+  sleep 0.1
+done
+node -e '
+const fs = require("node:fs");
+const file = process.argv[1];
+const id = process.argv[2];
+const tasks = JSON.parse(fs.readFileSync(file, "utf8"));
+const task = tasks.find((item) => item.id === id);
+if (!task || !["success", "running"].includes(task.status) || !task.logFile || !task.resultFile) {
+  throw new Error(`unexpected persisted codex task: ${JSON.stringify(task)}`);
+}
+console.log("[test] codex runner ok");
+' "$TMPDIR/codex-data/tasks.json" "$codex_task_id"
 
 echo "[test] absolute path read"
 path_read_response="$(

@@ -28,6 +28,10 @@
     ·
     <a href="./docs/sync-flows.md">Sync flows</a>
     ·
+    <a href="./docs/evidence.md">Evidence</a>
+    ·
+    <a href="./docs/promo/xhs-note.md">Promo copy</a>
+    ·
     <a href="./ROADMAP.md">Roadmap</a>
   </p>
 </div>
@@ -286,12 +290,24 @@ attachments, local configuration, and other private runtime files.
 - Local files can be read by ChatGPT through approved MCP tools.
 - Multiple local files can be bundled with `project.bundle`.
 - MCP-read local file content can be re-emitted by ChatGPT as a cloud-side downloadable artifact when the user wants a copy in the conversation.
+- For stable Trace Studio grouping, ask ChatGPT to call `trace.session_start` at the beginning of each conversation, and `task.start` before long multi-step work.
 - ChatGPT/App-provided cloud file download URLs can be written back to local disk with `cloud.download`.
 - Tool calls are persisted to `tool-calls.jsonl`.
 - File writes, downloads, tasks, processes, and service restarts are persisted to `audit.jsonl`.
 - The local console at `/app` and native macOS app show status, tool calls, and audit events.
 
 See [file sync flows](./docs/sync-flows.md).
+
+## Field Evidence
+
+The current release includes sanitized evidence from local and ChatGPT connector
+tests: build/test output, macOS app installation, tool catalog counts, write
+smoke tests, and connector troubleshooting notes. See
+[`docs/evidence.md`](./docs/evidence.md).
+
+Field note: keep `xhigh` / `XHigh` mode off by default. In local testing it
+produced more connector/tool-call errors than the normal profile, so use it only
+for focused debugging with trace capture enabled.
 
 ## Security Defaults
 

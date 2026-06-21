@@ -24,6 +24,30 @@ tool, inspects it, and can re-emit a downloadable copy in the chat. The MCP
 server still cannot silently bulk-upload arbitrary local files to permanent
 ChatGPT storage; keep broad exports and file-library uploads user-approved.
 
+## Trace Context And Conversation Grouping (recommended)
+
+To make Trace Studio group by conversation/task/project, ask ChatGPT to start a
+conversation session at the beginning of each user dialog or workflow:
+
+```text
+For each new user chat/conversation, call:
+1) trace.session_start with a short title and projectPath if available
+2) use codex.task_start / task.start before multi-step work when a task is clear
+Then perform normal file/read/write operations.
+```
+
+The server captures additional context when headers are present:
+
+- `conversationId` / `conversationIdHash` (from connector request headers)
+- `requestId` / `requestIdHash`
+- `transportSessionId`
+- `connectorProfile`
+- `projectPath`
+- `taskId`
+
+You can still pass `sessionId`/`taskId`/`projectPath`/`connectorProfile` explicitly
+in tool args when needed.
+
 Recommended ChatGPT-side instruction:
 
 ```text

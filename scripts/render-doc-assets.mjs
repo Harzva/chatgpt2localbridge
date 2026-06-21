@@ -120,6 +120,7 @@ if (fs.existsSync(indexHtml)) {
   writeThumbnail('thumbnail-matrix', renderMatrixThumbnail(), 1200, 675);
   writeThumbnail('thumbnail-square', renderSquareThumbnail(), 1080, 1080);
   writeThumbnail('thumbnail-story', renderStoryThumbnail(), 1080, 1920);
+  writeThumbnail('xhs-promo', renderXhsPromo(), 1242, 1660);
 }
 
 console.log(`Rendered docs assets into ${docsAssets}`);
@@ -160,15 +161,27 @@ function findChrome() {
 
 function renderLogo() {
   return `<!doctype html><html><head><meta charset="utf-8"><style>
-  body{margin:0;width:512px;height:512px;display:grid;place-items:center;background:#f7fbff;font-family:Inter,Arial,sans-serif}
-  .mark{width:390px;height:390px;border-radius:92px;background:#ffffff;border:10px solid #1769e0;box-shadow:0 24px 60px rgba(23,105,224,.18);position:relative}
-  .folder{position:absolute;left:78px;top:205px;width:235px;height:125px;background:#fbbf24;border:9px solid #17202a;border-radius:24px}
-  .folder:before{content:"";position:absolute;left:18px;top:-45px;width:104px;height:52px;background:#fbbf24;border:9px solid #17202a;border-bottom:0;border-radius:22px 22px 0 0}
-  .key{position:absolute;left:95px;top:78px;width:180px;height:62px;border-radius:34px;border:9px solid #17202a;background:#fff}
-  .key:before{content:"";position:absolute;left:18px;top:13px;width:38px;height:38px;border-radius:50%;background:#34c759;border:8px solid #17202a}
-  .key:after{content:"";position:absolute;right:-58px;top:23px;width:72px;height:16px;background:#17202a;box-shadow:42px 0 0 #17202a}
-  .route{position:absolute;left:80px;top:164px;width:248px;height:0;border-top:12px dashed #1769e0}
-  </style></head><body><div class="mark"><div class="key"></div><div class="route"></div><div class="folder"></div></div></body></html>`;
+  body{margin:0;width:512px;height:512px;display:grid;place-items:center;background:#eef6ff;font-family:Inter,Arial,sans-serif}
+  .mark{width:398px;height:398px;border-radius:92px;background:linear-gradient(145deg,#ffffff 0%,#f8fbff 54%,#e9f7f2 100%);box-shadow:0 30px 70px rgba(13,33,54,.24),inset 0 0 0 1px rgba(255,255,255,.9);position:relative;overflow:hidden}
+  .mark:before{content:"";position:absolute;inset:18px;border-radius:74px;border:2px solid rgba(18,110,227,.16)}
+  .knot{position:absolute;left:48px;top:48px;width:134px;height:134px;border-radius:36px;background:#fff;box-shadow:0 16px 34px rgba(13,33,54,.13);display:grid;place-items:center}
+  .loop{position:absolute;width:48px;height:22px;border:10px solid #111827;border-radius:999px;transform-origin:54px 11px}
+  .l1{transform:rotate(0deg) translateX(18px)}.l2{transform:rotate(60deg) translateX(18px)}.l3{transform:rotate(120deg) translateX(18px)}
+  .l4{transform:rotate(180deg) translateX(18px)}.l5{transform:rotate(240deg) translateX(18px)}.l6{transform:rotate(300deg) translateX(18px)}
+  .core{position:absolute;width:34px;height:34px;border-radius:50%;background:#fff;border:8px solid #111827}
+  .terminal{position:absolute;right:42px;top:58px;width:152px;height:116px;border-radius:28px;background:#111827;color:#e8fff4;box-shadow:0 16px 36px rgba(13,33,54,.22);overflow:hidden}
+  .termtop{height:28px;background:#1f2937;display:flex;gap:7px;align-items:center;padding-left:18px}
+  .dot{width:8px;height:8px;border-radius:50%;background:#ff6159;box-shadow:16px 0 #ffbd2e,32px 0 #28c840}
+  .prompt{font:700 39px ui-monospace,SFMono-Regular,Menlo,monospace;position:absolute;left:24px;top:50px;letter-spacing:0;color:#7cf6c2}.prompt span{color:#8fc7ff}
+  .bridge{position:absolute;left:88px;top:194px;width:252px;height:92px;border-radius:46px;background:linear-gradient(90deg,#126ee3,#18b893);box-shadow:0 20px 42px rgba(18,110,227,.28)}
+  .bridge:before,.bridge:after{content:"";position:absolute;top:25px;width:42px;height:42px;border-radius:50%;background:#fff;box-shadow:0 0 0 10px rgba(255,255,255,.22)}
+  .bridge:before{left:24px}.bridge:after{right:24px}
+  .bridge .line{position:absolute;left:72px;right:72px;top:42px;height:10px;border-radius:999px;background:#fff}
+  .folder{position:absolute;left:104px;bottom:52px;width:198px;height:98px;background:#ffca3a;border-radius:22px;box-shadow:0 18px 34px rgba(13,33,54,.2);border:5px solid #17202a}
+  .folder:before{content:"";position:absolute;left:18px;top:-28px;width:82px;height:36px;background:#ffca3a;border:5px solid #17202a;border-bottom:0;border-radius:18px 18px 0 0}
+  .lock{position:absolute;right:90px;bottom:76px;width:54px;height:42px;border-radius:12px;background:#fff;border:5px solid #17202a}
+  .lock:before{content:"";position:absolute;left:12px;top:-30px;width:22px;height:28px;border:5px solid #17202a;border-bottom:0;border-radius:18px 18px 0 0}
+  </style></head><body><div class="mark"><div class="knot"><div class="loop l1"></div><div class="loop l2"></div><div class="loop l3"></div><div class="loop l4"></div><div class="loop l5"></div><div class="loop l6"></div><div class="core"></div></div><div class="terminal"><div class="termtop"><div class="dot"></div></div><div class="prompt">C<span>&gt;</span></div></div><div class="bridge"><div class="line"></div></div><div class="folder"></div><div class="lock"></div></div></body></html>`;
 }
 
 function renderMockup(step) {
@@ -289,6 +302,21 @@ function renderStoryThumbnail() {
   .kicker{font-size:26px;font-weight:900;color:#7db3ff;text-transform:uppercase;letter-spacing:.08em}h1{font-size:92px;line-height:.95;margin:18px 0 26px;letter-spacing:0}.copy{font-size:38px;line-height:1.42;color:#d7e3f5}
   .phone{margin-top:72px;border:10px solid #fff;border-radius:42px;overflow:hidden;box-shadow:0 30px 90px rgba(0,0,0,.38)}.phone img{display:block;width:100%}.chips{display:flex;flex-wrap:wrap;gap:16px;margin-top:46px}.chip{font-size:28px;font-weight:800;border:1px solid rgba(255,255,255,.22);border-radius:999px;padding:16px 22px;background:rgba(255,255,255,.08)}
   </style></head><body><div class="wrap"><div class="logo"><img src="../logo.png" alt=""></div><div class="kicker">Codex / ChatGPT Plugin App</div><h1>Give agents a safe local control surface.</h1><div class="copy">Focused MCP tools, OAuth tunnels, policy editing, traces, and screenshot-first setup guides.</div><div class="chips"><div class="chip">Plugin App</div><div class="chip">OAuth</div><div class="chip">Computer Use</div></div><div class="phone"><img src="../page-mobile.png" alt=""></div></div></body></html>`;
+}
+
+function renderXhsPromo() {
+  return `<!doctype html><html><head><meta charset="utf-8"><style>
+  *{box-sizing:border-box}body{margin:0;width:1242px;height:1660px;background:#f7f4ee;font-family:-apple-system,BlinkMacSystemFont,"SF Pro Display","PingFang SC","Microsoft YaHei",Arial,sans-serif;color:#111827;overflow:hidden}
+  .page{position:relative;width:100%;height:100%;padding:74px 70px;background:linear-gradient(180deg,#fffdf8 0%,#eef7ff 64%,#f7fff9 100%)}
+  .top{display:flex;align-items:center;justify-content:space-between;margin-bottom:48px}
+  .brand{display:flex;align-items:center;gap:20px}.logo{width:112px;height:112px;border-radius:26px;background:#fff;border:1px solid #d9e6f2;box-shadow:0 18px 40px rgba(20,42,70,.16);overflow:hidden}.logo img{width:100%;height:100%;display:block}.brandText{font-size:30px;font-weight:900;line-height:1.05}.brandText span{display:block;font-size:18px;color:#64748b;margin-top:8px;font-weight:800}
+  .badge{border:2px solid #111827;border-radius:999px;padding:13px 20px;font-size:22px;font-weight:900;background:#ffca3a;box-shadow:6px 6px 0 #111827}
+  h1{font-size:86px;line-height:.98;letter-spacing:0;margin:0 0 24px;font-weight:950;max-width:1030px}.grad{background:linear-gradient(90deg,#126ee3,#10a37f);-webkit-background-clip:text;color:transparent}.sub{font-size:33px;line-height:1.36;color:#334155;max-width:990px;margin:0 0 38px;font-weight:650}
+  .route{height:124px;border:3px solid #111827;border-radius:26px;background:#fff;box-shadow:8px 8px 0 #111827;display:grid;grid-template-columns:1fr 90px 1fr 90px 1fr;align-items:center;padding:0 28px;margin-bottom:36px}.node{text-align:center;font-size:25px;font-weight:900}.node small{display:block;font-size:17px;color:#64748b;margin-top:8px}.arrow{text-align:center;font-size:44px;color:#126ee3;font-weight:950}
+  .grid{display:grid;grid-template-columns:1fr 1fr;gap:22px;margin-bottom:30px}.card{min-height:172px;background:#fff;border:2px solid #d9e6f2;border-radius:24px;padding:24px 25px;box-shadow:0 18px 42px rgba(20,42,70,.09)}.card strong{display:block;font-size:30px;line-height:1.1;margin-bottom:12px}.card p{font-size:23px;line-height:1.28;color:#475569;margin:0;font-weight:650}.card.blue{border-color:#bcd7ff;background:#f7fbff}.card.green{border-color:#b9f0d3;background:#f5fffa}.card.yellow{border-color:#ffe0a6;background:#fffaf0}.card.red{border-color:#ffc9c9;background:#fff7f7}
+  .proof{display:grid;grid-template-columns:1.15fr .85fr;gap:24px;margin-bottom:34px}.panel{border:3px solid #111827;border-radius:28px;background:#111827;color:#f8fafc;padding:28px;box-shadow:8px 8px 0 #10a37f}.panel h2{font-size:34px;line-height:1.08;margin:0 0 18px}.metric{display:flex;justify-content:space-between;align-items:center;border-top:1px solid rgba(255,255,255,.16);padding:15px 0;font-size:24px}.metric b{font-size:32px;color:#7cf6c2}.warn{border:3px solid #111827;border-radius:28px;background:#fff;box-shadow:8px 8px 0 #ffca3a;padding:27px}.warn h2{font-size:32px;line-height:1.08;margin:0 0 14px}.warn p{font-size:24px;line-height:1.28;margin:0;color:#334155;font-weight:700}.warn .x{display:inline-block;background:#fff1f2;color:#be123c;border-radius:12px;padding:4px 10px}
+  .footer{position:absolute;left:70px;right:70px;bottom:64px;display:flex;align-items:end;justify-content:space-between;border-top:2px solid #d9e6f2;padding-top:24px}.repo{font-size:28px;font-weight:950}.repo span{display:block;color:#126ee3;margin-top:8px}.line{font-size:21px;line-height:1.3;color:#64748b;text-align:right;font-weight:750;max-width:430px}
+  </style></head><body><main class="page"><section class="top"><div class="brand"><div class="logo"><img src="../logo.png" alt=""></div><div class="brandText">ChatGPT2LocalBridge<span>Codex / ChatGPT Plugin App</span></div></div><div class="badge">MCP ready</div></section><h1>把本地文件<br><span class="grad">挂到 ChatGPT</span></h1><p class="sub">一个开源本地桥接器：OAuth 授权、策略白名单、Trace 记录，让 ChatGPT 只访问你批准的项目目录。</p><section class="route"><div class="node">ChatGPT<small>云端对话</small></div><div class="arrow">→</div><div class="node">MCP Bridge<small>OAuth + Policy</small></div><div class="arrow">→</div><div class="node">Local Files<small>批准目录</small></div></section><section class="grid"><div class="card blue"><strong>本地可读</strong><p>目录、文件、多文件 bundle，一次给足上下文。</p></div><div class="card green"><strong>可写可追踪</strong><p>写入、下载、任务记录进本地 Trace Studio。</p></div><div class="card yellow"><strong>原生控制台</strong><p>macOS App 管策略、连接器字段、工具列表。</p></div><div class="card red"><strong>安全默认</strong><p>OAuth 优先，shell 和宽目录都要谨慎开启。</p></div></section><section class="proof"><div class="panel"><h2>实测证据</h2><div class="metric"><span>ChatGPT App tools</span><b>10</b></div><div class="metric"><span>Debug tools</span><b>64</b></div><div class="metric"><span>Write smoke test</span><b>OK</b></div><div class="metric"><span>macOS App install</span><b>OK</b></div></div><div class="warn"><h2>实测备注</h2><p>默认别开 <span class="x">xhigh</span>。它在本地测试里报错更多，先用普通模式跑通，再开调试抓 trace。</p></div></section><footer class="footer"><div class="repo">GitHub<span>Harzva/chatgpt2localbridge</span></div><div class="line">鼓励大家开发自己的 ChatGPT / Codex Plugin App，给 AI 一个安全、可审计的本地控制面。</div></footer></main></body></html>`;
 }
 
 function escapeHtml(value) {

@@ -1,6 +1,6 @@
 {
   "name": "chatgpt2localbridge",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Codex/ChatGPT plugin app and OAuth-enabled MCP connector for approved local workspaces.",
   "type": "module",
   "main": "dist/index.js",

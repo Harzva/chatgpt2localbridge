@@ -1,10 +1,22 @@
 <!doctype html><html><head><meta charset="utf-8"><style>
-  body{margin:0;width:512px;height:512px;display:grid;place-items:center;background:#f7fbff;font-family:Inter,Arial,sans-serif}
-  .mark{width:390px;height:390px;border-radius:92px;background:#ffffff;border:10px solid #1769e0;box-shadow:0 24px 60px rgba(23,105,224,.18);position:relative}
-  .folder{position:absolute;left:78px;top:205px;width:235px;height:125px;background:#fbbf24;border:9px solid #17202a;border-radius:24px}
-  .folder:before{content:"";position:absolute;left:18px;top:-45px;width:104px;height:52px;background:#fbbf24;border:9px solid #17202a;border-bottom:0;border-radius:22px 22px 0 0}
-  .key{position:absolute;left:95px;top:78px;width:180px;height:62px;border-radius:34px;border:9px solid #17202a;background:#fff}
-  .key:before{content:"";position:absolute;left:18px;top:13px;width:38px;height:38px;border-radius:50%;background:#34c759;border:8px solid #17202a}
-  .key:after{content:"";position:absolute;right:-58px;top:23px;width:72px;height:16px;background:#17202a;box-shadow:42px 0 0 #17202a}
-  .route{position:absolute;left:80px;top:164px;width:248px;height:0;border-top:12px dashed #1769e0}
-  </style></head><body><div class="mark"><div class="key"></div><div class="route"></div><div class="folder"></div></div></body></html>
+  body{margin:0;width:512px;height:512px;display:grid;place-items:center;background:#eef6ff;font-family:Inter,Arial,sans-serif}
+  .mark{width:398px;height:398px;border-radius:92px;background:linear-gradient(145deg,#ffffff 0%,#f8fbff 54%,#e9f7f2 100%);box-shadow:0 30px 70px rgba(13,33,54,.24),inset 0 0 0 1px rgba(255,255,255,.9);position:relative;overflow:hidden}
+  .mark:before{content:"";position:absolute;inset:18px;border-radius:74px;border:2px solid rgba(18,110,227,.16)}
+  .knot{position:absolute;left:48px;top:48px;width:134px;height:134px;border-radius:36px;background:#fff;box-shadow:0 16px 34px rgba(13,33,54,.13);display:grid;place-items:center}
+  .loop{position:absolute;width:48px;height:22px;border:10px solid #111827;border-radius:999px;transform-origin:54px 11px}
+  .l1{transform:rotate(0deg) translateX(18px)}.l2{transform:rotate(60deg) translateX(18px)}.l3{transform:rotate(120deg) translateX(18px)}
+  .l4{transform:rotate(180deg) translateX(18px)}.l5{transform:rotate(240deg) translateX(18px)}.l6{transform:rotate(300deg) translateX(18px)}
+  .core{position:absolute;width:34px;height:34px;border-radius:50%;background:#fff;border:8px solid #111827}
+  .terminal{position:absolute;right:42px;top:58px;width:152px;height:116px;border-radius:28px;background:#111827;color:#e8fff4;box-shadow:0 16px 36px rgba(13,33,54,.22);overflow:hidden}
+  .termtop{height:28px;background:#1f2937;display:flex;gap:7px;align-items:center;padding-left:18px}
+  .dot{width:8px;height:8px;border-radius:50%;background:#ff6159;box-shadow:16px 0 #ffbd2e,32px 0 #28c840}
+  .prompt{font:700 39px ui-monospace,SFMono-Regular,Menlo,monospace;position:absolute;left:24px;top:50px;letter-spacing:0;color:#7cf6c2}.prompt span{color:#8fc7ff}
+  .bridge{position:absolute;left:88px;top:194px;width:252px;height:92px;border-radius:46px;background:linear-gradient(90deg,#126ee3,#18b893);box-shadow:0 20px 42px rgba(18,110,227,.28)}
+  .bridge:before,.bridge:after{content:"";position:absolute;top:25px;width:42px;height:42px;border-radius:50%;background:#fff;box-shadow:0 0 0 10px rgba(255,255,255,.22)}
+  .bridge:before{left:24px}.bridge:after{right:24px}
+  .bridge .line{position:absolute;left:72px;right:72px;top:42px;height:10px;border-radius:999px;background:#fff}
+  .folder{position:absolute;left:104px;bottom:52px;width:198px;height:98px;background:#ffca3a;border-radius:22px;box-shadow:0 18px 34px rgba(13,33,54,.2);border:5px solid #17202a}
+  .folder:before{content:"";position:absolute;left:18px;top:-28px;width:82px;height:36px;background:#ffca3a;border:5px solid #17202a;border-bottom:0;border-radius:18px 18px 0 0}
+  .lock{position:absolute;right:90px;bottom:76px;width:54px;height:42px;border-radius:12px;background:#fff;border:5px solid #17202a}
+  .lock:before{content:"";position:absolute;left:12px;top:-30px;width:22px;height:28px;border:5px solid #17202a;border-bottom:0;border-radius:18px 18px 0 0}
+  </style></head><body><div class="mark"><div class="knot"><div class="loop l1"></div><div class="loop l2"></div><div class="loop l3"></div><div class="loop l4"></div><div class="loop l5"></div><div class="loop l6"></div><div class="core"></div></div><div class="terminal"><div class="termtop"><div class="dot"></div></div><div class="prompt">C<span>&gt;</span></div></div><div class="bridge"><div class="line"></div></div><div class="folder"></div><div class="lock"></div></div></body></html>

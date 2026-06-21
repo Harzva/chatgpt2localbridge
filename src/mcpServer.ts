@@ -17,12 +17,15 @@ import {
   sanitizeForLog,
   summarizeToolResult,
 } from './activity.js';
+import { getRequestContext, type SafeRequestContext } from './requestContext.js';
 
 const execAsync = promisify(exec);
 
 const MAX_FILE_BYTES = 2 * 1024 * 1024;
 const MAX_OUTPUT_BYTES = 200_000;
 const MAX_SKILL_FILE_BYTES = 512 * 1024;
+const BRIDGE_VERSION = '0.1.1';
+const TRACE_SESSION_FILE = 'trace-session.json';
 const BRIDGE_SERVICE_LABELS = [
   'com.chatgpt2localbridge.bridge',
   'com.chatgpt2localbridge.ngrok',
@@ -35,6 +38,22 @@ const BRIDGE_LOG_FILES = [
 const SERVICE_RESTART_LABELS = ['bridge', 'ngrok'] as const;
 
 let activeConfig: BridgeConfig | undefined;
+let activeTraceTaskIdCache: string | undefined;
+
+interface TraceSessionRecord {
+  id: string;
+  title: string;
+  projectPath?: string;
+  connectorProfile?: string;
+  taskId?: string;
+  status: 'active' | 'ended';
+  startedAt: string;
+  updatedAt: string;
+  endedAt?: string;
+}
+
+const taskStatuses = ['active', 'running', 'success', 'failed', 'cancelled', 'done', 'blocked'] as const;
+type TaskStatus = typeof taskStatuses[number];
 
 interface WorkspaceRecord {
   name: string;
@@ -49,10 +68,23 @@ interface TaskRecord {
   title: string;
   workspace?: string;
   projectPath?: string;
-  status: 'active' | 'done' | 'blocked';
+  status: TaskStatus;
   notes: Array<{ ts: string; text: string }>;
   createdAt: string;
   updatedAt: string;
+  mode?: 'normal' | 'debug';
+  timeoutMs?: number;
+  command?: string;
+  pid?: number;
+  logFile?: string;
+  resultFile?: string;
+  exitCode?: number;
+  signal?: string;
+  startedAt?: string;
+  completedAt?: string;
+  changedFiles?: Array<{ path: string; oldPath?: string; status: string; insertions: number; deletions: number }>;
+  diffPreview?: string;
+  testResult?: string;
 }
 
 interface ProcessRecord {
@@ -137,6 +169,29 @@ const healthCheckOutput = {
   error: z.string().optional(),
 };
 
+const requestContextOutput = {
+  source: z.string(),
+  transportSessionId: z.string().optional(),
+  requestId: z.string().optional(),
+  requestIdHash: z.string().optional(),
+  userAgent: z.string().optional(),
+  connectorProfile: z.string().optional(),
+  conversationId: z.string().optional(),
+  conversationIdHash: z.string().optional(),
+};
+
+const traceSessionOutput = {
+  id: z.string(),
+  title: z.string(),
+  projectPath: z.string().optional(),
+  connectorProfile: z.string().optional(),
+  taskId: z.string().optional(),
+  status: z.enum(['active', 'ended']),
+  startedAt: z.string(),
+  updatedAt: z.string(),
+  endedAt: z.string().optional(),
+};
+
 const detectedTestOutput = {
   name: z.string(),
   command: z.string(),
@@ -156,10 +211,29 @@ const taskOutput = {
   title: z.string(),
   workspace: z.string().optional(),
   projectPath: z.string().optional(),
-  status: z.enum(['active', 'done', 'blocked']),
+  status: z.enum(taskStatuses),
   notes: z.array(z.object({ ts: z.string(), text: z.string() })),
   createdAt: z.string(),
   updatedAt: z.string(),
+  mode: z.enum(['normal', 'debug']).optional(),
+  timeoutMs: z.number().optional(),
+  command: z.string().optional(),
+  pid: z.number().optional(),
+  logFile: z.string().optional(),
+  resultFile: z.string().optional(),
+  exitCode: z.number().optional(),
+  signal: z.string().optional(),
+  startedAt: z.string().optional(),
+  completedAt: z.string().optional(),
+  changedFiles: z.array(z.object({
+    path: z.string(),
+    oldPath: z.string().optional(),
+    status: z.string(),
+    insertions: z.number(),
+    deletions: z.number(),
+  })).optional(),
+  diffPreview: z.string().optional(),
+  testResult: z.string().optional(),
 };
 
 const processOutput = {
@@ -179,10 +253,15 @@ const toolCallOutput = {
   ts: z.string(),
   tool: z.string(),
   status: z.enum(['started', 'ok', 'error']),
+  sessionId: z.string().optional(),
+  taskId: z.string().optional(),
+  projectPath: z.string().optional(),
+  connectorProfile: z.string().optional(),
   durationMs: z.number().optional(),
   args: z.record(z.unknown()).optional(),
   result: z.record(z.unknown()).optional(),
   error: z.string().optional(),
+  requestContext: z.object(requestContextOutput).passthrough().optional(),
 };
 
 const auditEventOutput = {
@@ -251,10 +330,13 @@ const policyShape = {
 
 export function createMcpServer(config: BridgeConfig): McpServer {
   activeConfig = config;
+  const defaultPublicBaseUrl = config.oauth.publicBaseUrl
+    ?? `http://127.0.0.1:${process.env.LOCALBRIDGE_PORT ?? '3838'}`;
   const server = new McpServer(
-    { name: 'chatgpt2localbridge', version: '0.1.0' },
+    { name: 'chatgpt2localbridge', version: BRIDGE_VERSION },
     { capabilities: { tools: {} } },
   );
+  installToolProfileGate(server, config);
 
   server.registerTool('project.snapshot', {
     title: 'Project Snapshot',
@@ -276,7 +358,7 @@ export function createMcpServer(config: BridgeConfig): McpServer {
       totalFiles: z.number(),
       totalLines: z.number(),
     },
-    annotations: { readOnlyHint: true, openWorldHint: false },
+    annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
   }, withToolLogging('project.snapshot', async ({ path: projectPath, maxDepth }) => {
     const root = resolveProject(projectPath);
     const snapshot = snapshotProject(root);
@@ -368,7 +450,7 @@ export function createMcpServer(config: BridgeConfig): McpServer {
     outputSchema: {
       files: z.array(z.object(pathReadFileOutput)),
     },
-    annotations: { readOnlyHint: true, openWorldHint: false },
+    annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
   }, withToolLogging('file_read_path', async ({ paths, maxLines }) => {
     const results = paths.map((requestedPath) => readAllowedPathFile(requestedPath, maxLines));
 
@@ -486,6 +568,25 @@ export function createMcpServer(config: BridgeConfig): McpServer {
     },
     annotations: { readOnlyHint: true, openWorldHint: false },
   }, withToolLogging('policy.read', async () => {
+    const policy = activeConfig?.policy ?? config.policy;
+    const warnings = validatePolicy(policy).warnings;
+    return {
+      content: [{ type: 'text' as const, text: formatPolicySummary(config.policyPath, policy, warnings) }],
+      structuredContent: { policyPath: config.policyPath, policy, warnings },
+    };
+  }));
+
+  server.registerTool('policy_read', {
+    title: 'Read Bridge Policy',
+    description: 'ChatGPT-compatible alias for policy.read. Read approved roots, skill roots, deny globs, and shell rules.',
+    inputSchema: {},
+    outputSchema: {
+      policyPath: z.string(),
+      policy: z.object(policyShape),
+      warnings: z.array(z.string()),
+    },
+    annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
+  }, withToolLogging('policy_read', async () => {
     const policy = activeConfig?.policy ?? config.policy;
     const warnings = validatePolicy(policy).warnings;
     return {
@@ -759,6 +860,220 @@ export function createMcpServer(config: BridgeConfig): McpServer {
     };
   }));
 
+  server.registerTool('file_list', {
+    title: 'List Directory',
+    description: 'ChatGPT-compatible alias for file.list. List files and directories inside an approved local workspace.',
+    inputSchema: {
+      projectPath: z.string(),
+      dir: z.string().default('.'),
+      recursive: z.boolean().default(false),
+      maxEntries: z.number().int().min(1).max(1000).default(200),
+    },
+    outputSchema: {
+      dir: z.string(),
+      entries: z.array(z.object(directoryEntryOutput)),
+      truncated: z.boolean(),
+    },
+    annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
+  }, withToolLogging('file_list', async ({ projectPath, dir, recursive, maxEntries }) => {
+    const root = resolveProject(projectPath);
+    const target = resolveInsideProject(root, dir);
+    const entries = listDirectory(root, target, recursive, maxEntries);
+    return {
+      content: [{
+        type: 'text' as const,
+        text: entries.items.length
+          ? entries.items.map((entry) => `${entry.type.padEnd(9)} ${entry.path}`).join('\n')
+          : `No entries in ${dir}`,
+      }],
+      structuredContent: { dir, entries: entries.items, truncated: entries.truncated },
+    };
+  }));
+
+  server.registerTool('local_list_dir', {
+    title: 'List Local Directory',
+    description: 'Use this first when the user asks whether ChatGPT can see a local path. It lists an approved local directory only; it does not read file contents.',
+    inputSchema: {
+      projectPath: z.string().describe('Absolute approved local directory path, such as /path/to/project or /Users/name/project.'),
+      dir: z.string().default('.').describe('Subdirectory inside projectPath. Use "." for the directory itself.'),
+      recursive: z.boolean().default(false),
+      maxEntries: z.number().int().min(1).max(1000).default(200),
+    },
+    outputSchema: {
+      projectPath: z.string(),
+      dir: z.string(),
+      entries: z.array(z.object(directoryEntryOutput)),
+      truncated: z.boolean(),
+    },
+    annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
+  }, withToolLogging('local_list_dir', async ({ projectPath, dir, recursive, maxEntries }) => {
+    const root = resolveProject(projectPath);
+    const target = resolveInsideProject(root, dir);
+    const entries = listDirectory(root, target, recursive, maxEntries);
+    return {
+      content: [{
+        type: 'text' as const,
+        text: entries.items.length
+          ? entries.items.map((entry) => `${entry.type.padEnd(9)} ${entry.path}`).join('\n')
+          : `No entries in ${dir}`,
+      }],
+      structuredContent: { projectPath: root, dir, entries: entries.items, truncated: entries.truncated },
+    };
+  }));
+
+  server.registerTool('local_read_file', {
+    title: 'Read Local File',
+    description: 'Read one approved local text file. Use this only when the user asks to read a specific file, not when they ask to inspect or list a directory.',
+    inputSchema: {
+      projectPath: z.string().describe('Absolute approved local workspace root.'),
+      file: z.string().describe('Relative file path inside projectPath. Do not pass a directory.'),
+      maxLines: z.number().int().min(1).max(5000).default(1000),
+    },
+    outputSchema: {
+      projectPath: z.string(),
+      file: z.object(fileSummaryOutput),
+    },
+    annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
+  }, withToolLogging('local_read_file', async ({ projectPath, file, maxLines }) => {
+    const result = readLocalFile(projectPath, file, maxLines);
+    return {
+      content: [{
+        type: 'text' as const,
+        text: result.file.error
+          ? `${result.file.path}: ${result.file.error}`
+          : `--- ${result.file.path} (${result.file.lines} lines${result.file.truncated ? ', truncated' : ''}) ---\n${result.file.content ?? ''}`,
+      }],
+      structuredContent: { projectPath: result.projectPath, file: stripFileContentFromSummary(result.file) },
+      _meta: { fileContents: [result.file] },
+    };
+  }));
+
+  server.registerTool('local_write_file', {
+    title: 'Write Local File',
+    description: 'Create or overwrite one approved local text file. Use this when the user explicitly asks to save, create, or update a file in an approved local workspace.',
+    inputSchema: {
+      projectPath: z.string().describe('Absolute approved local workspace root.'),
+      file: z.string().describe('Relative file path inside projectPath. Do not pass an absolute path.'),
+      content: z.string().describe('Full text content to write.'),
+      createDirs: z.boolean().default(true).describe('Create parent directories when missing.'),
+    },
+    outputSchema: {
+      file: z.string(),
+      changedFiles: z.array(z.object(changedFileOutput)),
+      stats: z.object(diffStatsOutput),
+    },
+    annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
+  }, withToolLogging('local_write_file', async ({ projectPath, file, content, createDirs }) => {
+    return writeLocalFile(projectPath, file, content, createDirs);
+  }));
+
+  server.registerTool('local_bundle_dir', {
+    title: 'Bundle Local Directory',
+    description: 'Bundle an approved local directory summary plus selected text files in one call. Use this when the user wants multiple local files or a compact project snapshot.',
+    inputSchema: {
+      projectPath: z.string().describe('Absolute approved local workspace root.'),
+      dir: z.string().default('.').describe('Relative directory inside projectPath.'),
+      files: z.array(z.string()).max(40).default([]).describe('Optional relative files to include with content.'),
+      recursive: z.boolean().default(false),
+      maxEntries: z.number().int().min(1).max(1000).default(120),
+      maxFileBytes: z.number().int().min(100).max(MAX_FILE_BYTES).default(120_000),
+      maxTotalBytes: z.number().int().min(1000).max(4 * 1024 * 1024).default(750_000),
+    },
+    outputSchema: {
+      projectPath: z.string(),
+      dir: z.string(),
+      directorySummary: z.array(z.object(directoryEntryOutput)),
+      files: z.array(z.object(bundleFileOutput)),
+      truncated: z.boolean(),
+      notes: z.array(z.string()),
+    },
+    annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
+  }, withToolLogging('local_bundle_dir', async ({ projectPath, dir, files, recursive, maxEntries, maxFileBytes, maxTotalBytes }) => {
+    const bundle = bundleLocalDirectory({ projectPath, dir, files, recursive, maxEntries, maxFileBytes, maxTotalBytes });
+    return {
+      content: [{ type: 'text' as const, text: formatBundleContent({ ...bundle, root: bundle.projectPath, diff: undefined }) }],
+      structuredContent: bundle,
+    };
+  }));
+
+  server.registerTool('local_workspace_action', {
+    title: 'Local Workspace Action',
+    description: 'Preferred single entrypoint for ChatGPT. Choose action=list_dir for directories, read_file for one file, write_file to save one text file, or bundle_dir for a directory summary plus selected files.',
+    inputSchema: {
+      action: z.enum(['list_dir', 'read_file', 'write_file', 'bundle_dir']),
+      projectPath: z.string().describe('Absolute approved local workspace root.'),
+      path: z.string().default('.').describe('Relative directory or file path inside projectPath.'),
+      files: z.array(z.string()).max(40).default([]).describe('Only used by bundle_dir. Optional relative files to include with content.'),
+      content: z.string().optional().describe('Only used by write_file. Full text content to write.'),
+      createDirs: z.boolean().default(true).describe('Only used by write_file. Create parent directories when missing.'),
+      recursive: z.boolean().default(false),
+      maxEntries: z.number().int().min(1).max(1000).default(120),
+      maxLines: z.number().int().min(1).max(5000).default(1000),
+      maxFileBytes: z.number().int().min(100).max(MAX_FILE_BYTES).default(120_000),
+      maxTotalBytes: z.number().int().min(1000).max(4 * 1024 * 1024).default(750_000),
+    },
+    outputSchema: {
+      action: z.enum(['list_dir', 'read_file', 'write_file', 'bundle_dir']),
+      result: z.unknown(),
+    },
+    annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
+  }, withToolLogging('local_workspace_action', async ({
+    action,
+    projectPath,
+    path: relPath,
+    files,
+    content,
+    createDirs,
+    recursive,
+    maxEntries,
+    maxLines,
+    maxFileBytes,
+    maxTotalBytes,
+  }) => {
+    if (action === 'list_dir') {
+      const result = listLocalDirectory(projectPath, relPath, recursive, maxEntries);
+      return {
+        content: [{ type: 'text' as const, text: formatDirectoryEntries(result.dir, result.entries) }],
+        structuredContent: { action, result },
+      };
+    }
+    if (action === 'read_file') {
+      const result = readLocalFile(projectPath, relPath, maxLines);
+      return {
+        content: [{
+          type: 'text' as const,
+          text: result.file.error
+            ? `${result.file.path}: ${result.file.error}`
+            : `--- ${result.file.path} (${result.file.lines} lines${result.file.truncated ? ', truncated' : ''}) ---\n${result.file.content ?? ''}`,
+        }],
+        structuredContent: { action, result: { projectPath: result.projectPath, file: stripFileContentFromSummary(result.file) } },
+        _meta: { fileContents: [result.file] },
+      };
+    }
+    if (action === 'write_file') {
+      if (content == null) throw new Error('content is required when action=write_file');
+      const result = writeLocalFile(projectPath, relPath, content, createDirs);
+      return {
+        content: result.content,
+        structuredContent: { action, result: result.structuredContent },
+      };
+    }
+
+    const result = bundleLocalDirectory({
+      projectPath,
+      dir: relPath,
+      files,
+      recursive,
+      maxEntries,
+      maxFileBytes,
+      maxTotalBytes,
+    });
+    return {
+      content: [{ type: 'text' as const, text: formatBundleContent({ ...result, root: result.projectPath, diff: undefined }) }],
+      structuredContent: { action, result },
+    };
+  }));
+
   server.registerTool('file.stat', {
     title: 'File Stat',
     description: 'Return metadata for a file or directory inside a project, optionally including sha256 for files.',
@@ -801,6 +1116,32 @@ export function createMcpServer(config: BridgeConfig): McpServer {
     if (createDirs) fs.mkdirSync(path.dirname(target), { recursive: true });
     fs.writeFileSync(target, content, 'utf-8');
     auditFileOperation('file.write', root, [{ path: target, before, after: fileDigest(target) }]);
+    return fileChangeResponse(root, file, `Wrote ${file}`);
+  }));
+
+  // Compatibility alias for ChatGPT Custom Connectors that prefer underscore-named tools.
+  server.registerTool('file_write', {
+    title: 'Write File',
+    description: 'Compatibility alias for file.write. Create or overwrite a text file inside a project.',
+    inputSchema: {
+      projectPath: z.string(),
+      file: z.string(),
+      content: z.string(),
+      createDirs: z.boolean().default(true),
+    },
+    outputSchema: {
+      file: z.string(),
+      changedFiles: z.array(z.object(changedFileOutput)),
+      stats: z.object(diffStatsOutput),
+    },
+    annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
+  }, withToolLogging('file_write', async ({ projectPath, file, content, createDirs }) => {
+    const root = resolveProject(projectPath);
+    const target = resolveInsideProject(root, file);
+    const before = fileDigest(target);
+    if (createDirs) fs.mkdirSync(path.dirname(target), { recursive: true });
+    fs.writeFileSync(target, content, 'utf-8');
+    auditFileOperation('file_write', root, [{ path: target, before, after: fileDigest(target) }]);
     return fileChangeResponse(root, file, `Wrote ${file}`);
   }));
 
@@ -1303,6 +1644,71 @@ export function createMcpServer(config: BridgeConfig): McpServer {
     };
   }));
 
+  server.registerTool('trace.session_start', {
+    title: 'Start Trace Session',
+    description: 'Create a logical trace session id for grouping subsequent tool calls by conversation/task/project.',
+    inputSchema: {
+      title: z.string(),
+      projectPath: z.string().optional(),
+      connectorProfile: z.string().optional(),
+      taskId: z.string().optional(),
+    },
+    outputSchema: z.object(traceSessionOutput),
+    annotations: { readOnlyHint: false, openWorldHint: false },
+  }, withToolLogging('trace.session_start', async ({ title, projectPath, connectorProfile, taskId }) => {
+    const session = startTraceSession({
+      title,
+      projectPath,
+      connectorProfile,
+      taskId,
+      requestContext: getRequestContext(),
+    });
+    return {
+      content: [{ type: 'text' as const, text: `Trace session ${session.id} started` }],
+      structuredContent: session,
+    };
+  }));
+
+  server.registerTool('trace.session_current', {
+    title: 'Get Current Trace Session',
+    description: 'Read the current active trace session used by subsequent tool calls.',
+    inputSchema: {},
+    outputSchema: z.union([
+      z.object(traceSessionOutput),
+      z.null(),
+    ]),
+    annotations: { readOnlyHint: true, openWorldHint: false },
+  }, withToolLogging('trace.session_current', async () => {
+    const session = readActiveTraceSession();
+    return {
+      content: [{ type: 'text' as const, text: session ? `Current trace session: ${session.id}` : 'No active trace session.' }],
+      structuredContent: session ?? null,
+    };
+  }));
+
+  server.registerTool('trace.session_end', {
+    title: 'End Trace Session',
+    description: 'End the currently active trace session. Provide sessionId to end a specific session.',
+    inputSchema: {
+      sessionId: z.string().optional(),
+      note: z.string().optional(),
+    },
+    outputSchema: z.union([z.object(traceSessionOutput), z.string()]),
+    annotations: { readOnlyHint: false, openWorldHint: false },
+  }, withToolLogging('trace.session_end', async ({ sessionId, note }) => {
+    const ended = endTraceSession(sessionId, note);
+    if (!ended) {
+      return {
+        content: [{ type: 'text' as const, text: 'No active session matched.' }],
+        isError: true,
+      };
+    }
+    return {
+      content: [{ type: 'text' as const, text: `Trace session ${ended.id} ended` }],
+      structuredContent: ended,
+    };
+  }));
+
   server.registerTool('task.start', {
     title: 'Start Task',
     description: 'Start a lightweight persisted task/session record for multi-step work.',
@@ -1315,6 +1721,7 @@ export function createMcpServer(config: BridgeConfig): McpServer {
     annotations: { readOnlyHint: false, openWorldHint: false },
   }, withToolLogging('task.start', async ({ title, workspace, projectPath }) => {
     const task = startTask(title, workspace, projectPath);
+    syncTraceContextForTask(task.id, task.projectPath, getRequestContext());
     return {
       content: [{ type: 'text' as const, text: `Task ${task.id}: ${task.title}` }],
       structuredContent: task,
@@ -1357,6 +1764,109 @@ export function createMcpServer(config: BridgeConfig): McpServer {
     };
   }));
 
+  server.registerTool('codex.task_start', {
+    title: 'Start Codex Runner Task',
+    description: 'High-level ChatGPT entrypoint for local Codex work. Creates a persisted task record that the native app can show in Codex Runner; prefer this over raw shell.exec for broad local work.',
+    inputSchema: {
+      task: z.string(),
+      workspace: z.string().optional(),
+      projectPath: z.string().optional(),
+      mode: z.enum(['normal', 'debug']).default('normal'),
+      timeoutMs: z.number().int().min(1_000).max(600_000).default(120_000),
+    },
+    outputSchema: z.object(taskOutput).shape,
+    annotations: { readOnlyHint: false, openWorldHint: false },
+  }, withToolLogging('codex.task_start', async ({ task, workspace, projectPath, mode, timeoutMs }) => {
+    const updated = startCodexRunnerTask(task, workspace, projectPath, mode, timeoutMs);
+    syncTraceContextForTask(updated.id, updated.projectPath, getRequestContext());
+    return {
+      content: [{ type: 'text' as const, text: `Codex task ${updated.id}: ${updated.title}` }],
+      structuredContent: updated,
+    };
+  }));
+
+  server.registerTool('codex.status', {
+    title: 'Codex Runner Status',
+    description: 'Read one Codex Runner task or list recent task records for the native app queue.',
+    inputSchema: {
+      taskId: z.string().optional(),
+      limit: z.number().int().min(1).max(100).default(20),
+    },
+    outputSchema: {
+      tasks: z.array(z.object(taskOutput)),
+    },
+    annotations: { readOnlyHint: true, openWorldHint: false },
+  }, withToolLogging('codex.status', async ({ taskId, limit }) => {
+    const tasks = listCodexRunnerTasks(taskId, limit);
+    return {
+      content: [{ type: 'text' as const, text: tasks.length ? tasks.map(formatTask).join('\n') : 'No Codex Runner tasks found.' }],
+      structuredContent: { tasks },
+    };
+  }));
+
+  server.registerTool('codex.result', {
+    title: 'Codex Runner Result',
+    description: 'Return the current task result envelope for the native Codex Runner view. This is a stable high-level result shape; full CLI diff/test attachment lands in the next runner phase.',
+    inputSchema: {
+      taskId: z.string().optional(),
+      limit: z.number().int().min(1).max(20).default(5),
+    },
+    outputSchema: {
+      tasks: z.array(z.object(taskOutput)),
+      changedFiles: z.array(z.object({
+        path: z.string(),
+        oldPath: z.string().optional(),
+        status: z.string(),
+        insertions: z.number(),
+        deletions: z.number(),
+      })),
+      diffPreview: z.string(),
+      testResult: z.string(),
+      logTail: z.string(),
+    },
+    annotations: { readOnlyHint: true, openWorldHint: false },
+  }, withToolLogging('codex.result', async ({ taskId, limit }) => {
+    const tasks = listCodexRunnerTasks(taskId, limit).map(refreshCodexTaskResult);
+    const primary = tasks[0];
+    return {
+      content: [{
+        type: 'text' as const,
+        text: primary
+          ? [
+              formatTask(primary),
+              primary.logFile ? `log=${primary.logFile}` : '',
+              primary.changedFiles?.length ? `changed=${primary.changedFiles.map((file) => file.path).join(', ')}` : '',
+            ].filter(Boolean).join('\n')
+          : 'No Codex Runner result records yet.',
+      }],
+      structuredContent: {
+        tasks,
+        changedFiles: primary?.changedFiles ?? [],
+        diffPreview: primary?.diffPreview ?? '',
+        testResult: primary?.testResult ?? '',
+        logTail: primary?.logFile ? readTextTail(primary.logFile, 40_000) : '',
+      },
+    };
+  }));
+
+  server.registerTool('codex.cancel', {
+    title: 'Cancel Codex Runner Task',
+    description: 'Cancel a running Codex Runner task by task id.',
+    inputSchema: {
+      taskId: z.string(),
+      confirm: z.boolean(),
+    },
+    outputSchema: z.object(taskOutput).shape,
+    annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
+  }, withToolLogging('codex.cancel', async ({ taskId, confirm }) => {
+    if (!confirm) throw new Error('Cancel skipped: confirm must be true.');
+    const task = cancelCodexRunnerTask(taskId);
+    return {
+      content: [{ type: 'text' as const, text: `Cancelled ${task.id}` }],
+      structuredContent: task,
+    };
+  }));
+
   server.registerTool('task.finish', {
     title: 'Finish Task',
     description: 'Mark a persisted task/session as done or blocked.',
@@ -1369,6 +1879,9 @@ export function createMcpServer(config: BridgeConfig): McpServer {
     annotations: { readOnlyHint: false, openWorldHint: false },
   }, withToolLogging('task.finish', async ({ taskId, status, note }) => {
     const task = updateTask(taskId, { status, note });
+    if (activeTraceTaskIdCache === task.id && task.status !== 'active' && task.status !== 'running') {
+      activeTraceTaskIdCache = undefined;
+    }
     return {
       content: [{ type: 'text' as const, text: `Task ${task.id} marked ${task.status}` }],
       structuredContent: task,
@@ -1476,7 +1989,7 @@ export function createMcpServer(config: BridgeConfig): McpServer {
     description: 'Check local and optional public bridge health endpoints.',
     inputSchema: {
       includePublic: z.boolean().default(true),
-      publicBaseUrl: z.string().url().default('https://example.ngrok-free.app'),
+      publicBaseUrl: z.string().url().default(defaultPublicBaseUrl),
       timeoutMs: z.number().int().min(500).max(10000).default(5000),
     },
     outputSchema: {
@@ -1484,7 +1997,30 @@ export function createMcpServer(config: BridgeConfig): McpServer {
     },
     annotations: { readOnlyHint: true, openWorldHint: true },
   }, withToolLogging('bridge.health', async ({ includePublic, publicBaseUrl, timeoutMs }) => {
-    const checks = [await checkHealth('local', 'http://127.0.0.1:3838/health', timeoutMs)];
+    const localPort = process.env.LOCALBRIDGE_PORT ?? '3838';
+    const checks = [await checkHealth('local', `http://127.0.0.1:${localPort}/health`, timeoutMs)];
+    if (includePublic) checks.push(await checkHealth('public', `${publicBaseUrl.replace(/\/$/, '')}/health`, timeoutMs));
+    return {
+      content: [{ type: 'text' as const, text: checks.map((check) => `${check.name}: ${check.ok ? 'ok' : 'failed'} ${check.status ?? ''} ${check.error ?? ''}`.trim()).join('\n') }],
+      structuredContent: { checks },
+    };
+  }));
+
+  server.registerTool('bridge_health', {
+    title: 'Bridge Health',
+    description: 'ChatGPT-compatible alias for bridge.health. Check local and optional public bridge health endpoints.',
+    inputSchema: {
+      includePublic: z.boolean().default(true),
+      publicBaseUrl: z.string().url().default(defaultPublicBaseUrl),
+      timeoutMs: z.number().int().min(500).max(10000).default(5000),
+    },
+    outputSchema: {
+      checks: z.array(z.object(healthCheckOutput)),
+    },
+    annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: true },
+  }, withToolLogging('bridge_health', async ({ includePublic, publicBaseUrl, timeoutMs }) => {
+    const localPort = process.env.LOCALBRIDGE_PORT ?? '3838';
+    const checks = [await checkHealth('local', `http://127.0.0.1:${localPort}/health`, timeoutMs)];
     if (includePublic) checks.push(await checkHealth('public', `${publicBaseUrl.replace(/\/$/, '')}/health`, timeoutMs));
     return {
       content: [{ type: 'text' as const, text: checks.map((check) => `${check.name}: ${check.ok ? 'ok' : 'failed'} ${check.status ?? ''} ${check.error ?? ''}`.trim()).join('\n') }],
@@ -1602,6 +2138,7 @@ function withToolLogging<TArgs>(
   handler: (args: TArgs) => Promise<any>,
 ): (args: TArgs) => Promise<any> {
   return async (args: TArgs) => {
+    const context = resolveTraceContext(name, args, getRequestContext());
     const startedAt = Date.now();
     const callId = `${startedAt.toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
     const config = activeConfig;
@@ -1611,7 +2148,12 @@ function withToolLogging<TArgs>(
         ts: new Date(startedAt).toISOString(),
         tool: name,
         status: 'started',
+        sessionId: context.sessionId,
+        taskId: context.taskId,
+        projectPath: context.projectPath,
+        connectorProfile: context.connectorProfile,
         args: sanitizeForLog(args) as Record<string, unknown>,
+        requestContext: context.requestContext,
       });
     }
     console.error(`[mcp] tool.start ${name} ${summarizeArgs(args)}`);
@@ -1624,8 +2166,13 @@ function withToolLogging<TArgs>(
           tool: name,
           status: 'ok',
           durationMs: Date.now() - startedAt,
+          sessionId: context.sessionId,
+          taskId: context.taskId,
+          projectPath: context.projectPath,
+          connectorProfile: context.connectorProfile,
           args: sanitizeForLog(args) as Record<string, unknown>,
           result: summarizeToolResult(result),
+          requestContext: context.requestContext,
         });
       }
       console.error(`[mcp] tool.done ${name} durationMs=${Date.now() - startedAt}`);
@@ -1639,14 +2186,151 @@ function withToolLogging<TArgs>(
           tool: name,
           status: 'error',
           durationMs: Date.now() - startedAt,
+          sessionId: context.sessionId,
+          taskId: context.taskId,
+          projectPath: context.projectPath,
+          connectorProfile: context.connectorProfile,
           args: sanitizeForLog(args) as Record<string, unknown>,
           error: message,
+          requestContext: context.requestContext,
         });
       }
       console.error(`[mcp] tool.error ${name} durationMs=${Date.now() - startedAt} error=${JSON.stringify(message)}`);
       throw err;
     }
   };
+}
+
+function resolveTraceContext(toolName: string, args: unknown, requestContext: SafeRequestContext) {
+  const projectPath = parseProjectPathFromArgs(args) || readActiveTraceSession()?.projectPath;
+  const sessionId =
+    parseStringField(args, 'sessionId')
+    || currentTraceSessionId()
+    || undefined;
+  const taskId =
+    parseStringField(args, 'taskId')
+    || activeTraceTaskId();
+  const connectorProfile =
+    parseStringField(args, 'connectorProfile')
+    || requestContext.connectorProfile
+    || activeConfig?.toolProfile;
+
+  if (toolName === 'trace.session_start') {
+    return {
+      sessionId: parseStringField(args, 'sessionId') || sessionId,
+      taskId,
+      projectPath,
+      connectorProfile: connectorProfile?.toString(),
+      requestContext: safeRequestContext(requestContext),
+    };
+  }
+
+  return {
+    sessionId,
+    taskId,
+    projectPath,
+    connectorProfile: connectorProfile?.toString(),
+    requestContext: safeRequestContext(requestContext),
+  };
+}
+
+function parseStringField(args: unknown, key: string): string | undefined {
+  if (!args || typeof args !== 'object') return undefined;
+  const value = (args as Record<string, unknown>)[key];
+  return typeof value === 'string' && value.trim() ? value.trim() : undefined;
+}
+
+function parseProjectPathFromArgs(args: unknown): string | undefined {
+  const direct = parseStringField(args, 'projectPath');
+  if (direct) return direct;
+  const workspace = parseStringField(args, 'workspace');
+  if (!workspace) return undefined;
+  try {
+    return resolveWorkspaceRecord(workspace).path;
+  } catch {
+    return undefined;
+  }
+}
+
+function safeRequestContext(context: SafeRequestContext): Record<string, string> {
+  const out: Record<string, string> = { source: context.source };
+  if (context.transportSessionId) out.transportSessionId = context.transportSessionId;
+  if (context.requestId) out.requestId = context.requestId;
+  if (context.requestIdHash) out.requestIdHash = context.requestIdHash;
+  if (context.userAgent) out.userAgent = context.userAgent;
+  if (context.connectorProfile) out.connectorProfile = context.connectorProfile;
+  if (context.conversationId) out.conversationId = context.conversationId;
+  if (context.conversationIdHash) out.conversationIdHash = context.conversationIdHash;
+  return out;
+}
+
+function installToolProfileGate(server: McpServer, config: BridgeConfig): void {
+  const originalRegisterTool = server.registerTool.bind(server) as any;
+  (server as any).registerTool = (name: string, toolConfig: any, handler: any) => {
+    if (!isToolAllowedForProfile(config.toolProfile, name)) {
+      return undefined;
+    }
+    return originalRegisterTool(name, toolConfig, handler);
+  };
+}
+
+function isToolAllowedForProfile(profile: BridgeConfig['toolProfile'], tool: string): boolean {
+  if (profile === 'debug') return true;
+
+  if (profile === 'chatgpt-app') {
+    return new Set([
+      'bridge_health',
+      'policy_read',
+      'file_list',
+      'file_read_path',
+      'file_write',
+      'local_list_dir',
+      'local_read_file',
+      'local_write_file',
+      'local_bundle_dir',
+      'local_workspace_action',
+    ]).has(tool);
+  }
+
+  const alwaysSafe = new Set([
+    'bridge.health',
+    'bridge.activity',
+    'bridge.logs',
+    'bridge.status',
+    'policy.read',
+    'workspace.list',
+    'workspace.resolve',
+    'trace.session_start',
+    'trace.session_current',
+    'trace.session_end',
+  ]);
+  if (alwaysSafe.has(tool)) return true;
+  if (tool.startsWith('codex.')) return true;
+
+  if (profile === 'codex-runner-only') {
+    return false;
+  }
+
+  if (isLowLevelTool(tool)) {
+    return false;
+  }
+
+  return true;
+}
+
+function isLowLevelTool(tool: string): boolean {
+  return tool === 'shell.exec'
+    || tool.startsWith('process.')
+    || tool === 'service.restart'
+    || tool === 'git.revert'
+    || tool === 'git.checkpoint'
+    || tool === 'workspace.add'
+    || tool === 'file.write'
+    || tool === 'file.mkdir'
+    || tool === 'file.copy'
+    || tool === 'file.move'
+    || tool === 'file.patch'
+    || tool === 'file.delete';
 }
 
 function summarizeArgs(args: unknown): string {
@@ -1748,6 +2432,91 @@ function expandHome(value: string): string {
   return value === '~' || value.startsWith('~/')
     ? path.join(process.env.HOME ?? '', value.slice(2))
     : value;
+}
+
+function listLocalDirectory(projectPath: string, dir: string, recursive: boolean, maxEntries: number) {
+  const root = resolveProject(projectPath);
+  const target = resolveInsideProject(root, dir);
+  const entries = listDirectory(root, target, recursive, maxEntries);
+  return {
+    projectPath: root,
+    dir,
+    entries: entries.items,
+    truncated: entries.truncated,
+  };
+}
+
+function formatDirectoryEntries(
+  dir: string,
+  entries: Array<{ path: string; type: 'file' | 'directory' | 'other'; size: number; modifiedAt: string }>,
+) {
+  if (!entries.length) return `No entries in ${dir}`;
+  return entries
+    .map((entry) => `${entry.type.padEnd(9)} ${entry.path} (${entry.size} bytes)`)
+    .join('\n');
+}
+
+function readLocalFile(projectPath: string, file: string, maxLines: number) {
+  const root = resolveProject(projectPath);
+  return {
+    projectPath: root,
+    file: readProjectFile(root, file, maxLines),
+  };
+}
+
+function writeLocalFile(projectPath: string, file: string, content: string, createDirs: boolean) {
+  const root = resolveProject(projectPath);
+  const target = resolveInsideProject(root, file);
+  const before = fileDigest(target);
+  if (createDirs) fs.mkdirSync(path.dirname(target), { recursive: true });
+  fs.writeFileSync(target, content, 'utf-8');
+  auditFileOperation('local_write_file', root, [{ path: target, before, after: fileDigest(target) }]);
+  return fileChangeResponse(root, file, `Wrote ${file}`);
+}
+
+function stripFileContentFromSummary<TFile extends { content?: string }>(file: TFile): Omit<TFile, 'content'> {
+  const { content: _content, ...summary } = file;
+  return summary;
+}
+
+function bundleLocalDirectory(args: {
+  projectPath: string;
+  dir: string;
+  files: string[];
+  recursive: boolean;
+  maxEntries: number;
+  maxFileBytes: number;
+  maxTotalBytes: number;
+}) {
+  const root = resolveProject(args.projectPath);
+  const target = resolveInsideProject(root, args.dir);
+  const directory = listDirectory(root, target, args.recursive, args.maxEntries);
+  const notes: string[] = [];
+  let remainingBytes = args.maxTotalBytes;
+  let truncated = directory.truncated;
+
+  if (directory.truncated) {
+    notes.push('Directory summary was truncated by maxEntries.');
+  }
+
+  const files = args.files.map((file) => {
+    const result = readProjectFileForBundle(root, file, args.maxFileBytes, remainingBytes);
+    if (result.content) {
+      remainingBytes -= Buffer.byteLength(result.content, 'utf-8');
+    }
+    if (result.truncated) truncated = true;
+    if (result.error) notes.push(`${file}: ${result.error}`);
+    return result;
+  });
+
+  return {
+    projectPath: root,
+    dir: args.dir,
+    directorySummary: directory.items,
+    files,
+    truncated,
+    notes,
+  };
 }
 
 function readProjectFile(root: string, relPath: string, maxLines: number) {
@@ -2391,7 +3160,7 @@ async function downloadToLocalFile(url: string, target: string, maxBytes: number
   const response = await fetch(url, {
     redirect: 'follow',
     headers: {
-      'User-Agent': 'ChatGPT2LocalBridge/0.1.0',
+      'User-Agent': `ChatGPT2LocalBridge/${BRIDGE_VERSION}`,
     },
   });
   if (!response.ok) {
@@ -2575,6 +3344,90 @@ function formatWorkspace(workspace: WorkspaceRecord) {
   return `${workspace.name}: ${workspace.path}${workspace.isDefault ? ' (default)' : ''}`;
 }
 
+function syncTraceContextForTask(taskId: string, projectPath: string | undefined, requestContext: SafeRequestContext): void {
+  const session = readActiveTraceSession();
+  const now = nowIso();
+  if (session) {
+    session.taskId = taskId;
+    session.projectPath = projectPath || session.projectPath;
+    session.connectorProfile = requestContext.connectorProfile || session.connectorProfile;
+    session.updatedAt = now;
+    writeTraceSession(session);
+  } else {
+    const title = `Task ${taskId}`;
+    startTraceSession({
+      title,
+      projectPath: projectPath,
+      connectorProfile: requestContext.connectorProfile,
+      taskId,
+    });
+  }
+  activeTraceTaskIdCache = taskId;
+}
+
+function currentTraceSessionId(): string | undefined {
+  return readActiveTraceSession()?.id;
+}
+
+function activeTraceTaskId(): string | undefined {
+  return activeTraceTaskIdCache || readActiveTraceSession()?.taskId;
+}
+
+function startTraceSession(params: {
+  title: string;
+  projectPath?: string;
+  connectorProfile?: string;
+  taskId?: string;
+  requestContext?: SafeRequestContext;
+}): TraceSessionRecord {
+  const now = nowIso();
+  const nowMs = Date.now();
+  const session: TraceSessionRecord = {
+    id: `trace_${nowMs.toString(36)}_${Math.random().toString(36).slice(2, 8)}`,
+    title: params.title,
+    projectPath: params.projectPath,
+    connectorProfile: params.connectorProfile || params.requestContext?.connectorProfile,
+    taskId: params.taskId,
+    status: 'active',
+    startedAt: now,
+    updatedAt: now,
+  };
+  writeTraceSession(session);
+  return session;
+}
+
+function readActiveTraceSession(): TraceSessionRecord | undefined {
+  const file = runtimeFile(TRACE_SESSION_FILE);
+  if (!fs.existsSync(file)) return undefined;
+  try {
+    const record = JSON.parse(fs.readFileSync(file, 'utf-8')) as TraceSessionRecord;
+    return record.status === 'active' ? record : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function writeTraceSession(session: TraceSessionRecord | null): void {
+  if (!session) {
+    const file = runtimeFile(TRACE_SESSION_FILE);
+    if (fs.existsSync(file)) fs.unlinkSync(file);
+    return;
+  }
+  fs.writeFileSync(runtimeFile(TRACE_SESSION_FILE), `${JSON.stringify(session, null, 2)}\n`, { mode: 0o600 });
+}
+
+function endTraceSession(sessionId?: string, _note?: string): TraceSessionRecord | undefined {
+  const session = readActiveTraceSession();
+  if (!session) return undefined;
+  if (sessionId && session.id !== sessionId) return undefined;
+
+  session.status = 'ended';
+  session.updatedAt = nowIso();
+  session.endedAt = session.updatedAt;
+  writeTraceSession(null);
+  return session;
+}
+
 function readTasks(): TaskRecord[] {
   return readJsonFile<TaskRecord[]>('tasks.json', []);
 }
@@ -2583,8 +3436,12 @@ function writeTasks(tasks: TaskRecord[]) {
   writeJsonFile('tasks.json', tasks);
 }
 
+function nowIso(): string {
+  return new Date().toISOString();
+}
+
 function startTask(title: string, workspace?: string, projectPath?: string): TaskRecord {
-  const now = new Date().toISOString();
+  const now = nowIso();
   const resolvedPath = projectPath ? resolveProject(projectPath) : workspace ? resolveWorkspaceRecord(workspace).path : undefined;
   const task: TaskRecord = {
     id: `task_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`,
@@ -2604,20 +3461,21 @@ function startTask(title: string, workspace?: string, projectPath?: string): Tas
 }
 
 function getTask(taskId: string): TaskRecord {
-  const task = readTasks().find((item) => item.id === taskId);
+  const task = refreshCodexRunnerTasks().find((item) => item.id === taskId);
   if (!task) throw new Error(`Task not found: ${taskId}`);
   return task;
 }
 
-function updateTask(taskId: string, patch: { status?: 'done' | 'blocked'; note?: string }): TaskRecord {
+function updateTask(taskId: string, patch: Partial<Omit<TaskRecord, 'id' | 'notes' | 'createdAt'>> & { note?: string }): TaskRecord {
   const tasks = readTasks();
   const index = tasks.findIndex((task) => task.id === taskId);
   if (index === -1) throw new Error(`Task not found: ${taskId}`);
-  const now = new Date().toISOString();
+  const now = nowIso();
   const task = tasks[index];
-  if (patch.status) task.status = patch.status;
-  if (patch.note) task.notes.push({ ts: now, text: patch.note });
-  task.updatedAt = now;
+  const { note, ...fields } = patch;
+  Object.assign(task, fields);
+  if (note) task.notes.push({ ts: now, text: note });
+  task.updatedAt = fields.updatedAt ?? now;
   tasks[index] = task;
   writeTasks(tasks);
   auditEvent('task.update', { id: task.id, status: task.status, note: patch.note });
@@ -2625,7 +3483,241 @@ function updateTask(taskId: string, patch: { status?: 'done' | 'blocked'; note?:
 }
 
 function formatTask(task: TaskRecord) {
-  return `${task.id} [${task.status}] ${task.title}${task.workspace ? ` workspace=${task.workspace}` : ''}`;
+  return `${task.id} [${task.status}] ${task.title}${task.workspace ? ` workspace=${task.workspace}` : ''}${task.projectPath ? ` path=${task.projectPath}` : ''}`;
+}
+
+function listCodexRunnerTasks(taskId: string | undefined, limit: number): TaskRecord[] {
+  const tasks = refreshCodexRunnerTasks();
+  if (taskId) return [getTask(taskId)];
+  return tasks
+    .filter(isCodexRunnerTask)
+    .slice(-limit)
+    .reverse();
+}
+
+function isCodexRunnerTask(task: TaskRecord): boolean {
+  return task.id.startsWith('codex_')
+    || task.notes.some((note) => note.text.includes('codex.mode='))
+    || task.logFile?.includes('codex-runs') === true
+    || task.command?.includes(' exec --json --cd ') === true;
+}
+
+function startCodexRunnerTask(
+  title: string,
+  workspace: string | undefined,
+  projectPath: string | undefined,
+  mode: 'normal' | 'debug',
+  timeoutMs: number,
+): TaskRecord {
+  const config = activeConfig;
+  if (!config) throw new Error('Bridge config is not initialized');
+  const root = projectPath ? resolveProject(projectPath) : workspace ? resolveWorkspaceRecord(workspace).path : undefined;
+  if (!root) throw new Error('codex.task_start requires projectPath or workspace.');
+
+  const now = nowIso();
+  const id = `codex_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+  const logDir = path.join(config.dataDir, 'codex-runs');
+  fs.mkdirSync(logDir, { recursive: true });
+  const logFile = path.join(logDir, `${id}.jsonl`);
+  const resultFile = path.join(logDir, `${id}.last-message.txt`);
+  const codexBin = process.env.CODEX_BIN || 'codex';
+  const prompt = [
+    title,
+    '',
+    'Operate only inside the approved project root. Keep changes scoped.',
+    'Before finishing, report changed files and any tests you ran.',
+  ].join('\n');
+  const args = [
+    'exec',
+    '--json',
+    '--cd', root,
+    '--sandbox', 'workspace-write',
+    '--ask-for-approval', 'never',
+    '--output-last-message', resultFile,
+    prompt,
+  ];
+  const command = [codexBin, ...args.map(shellQuote)].join(' ');
+  const task: TaskRecord = {
+    id,
+    title,
+    workspace,
+    projectPath: root,
+    status: 'running',
+    notes: [{ ts: now, text: `codex.mode=${mode}; timeoutMs=${timeoutMs}` }],
+    createdAt: now,
+    updatedAt: now,
+    mode,
+    timeoutMs,
+    command,
+    logFile,
+    resultFile,
+    startedAt: now,
+    changedFiles: [],
+    diffPreview: '',
+    testResult: 'No test result captured yet.',
+  };
+
+  const tasks = readTasks();
+  tasks.push(task);
+  writeTasks(tasks);
+  auditEvent('codex.task_start', { id, title, workspace, projectPath: root, mode, timeoutMs, logFile, resultFile });
+
+  const stream = fs.createWriteStream(logFile, { flags: 'a' });
+  stream.write(`${JSON.stringify({ ts: now, event: 'runner.start', command, projectPath: root })}\n`);
+  let timedOut = false;
+  try {
+    const child = spawn(codexBin, args, {
+      cwd: root,
+      stdio: ['ignore', 'pipe', 'pipe'],
+      env: process.env,
+    });
+    child.stdout?.pipe(stream, { end: false });
+    child.stderr?.pipe(stream, { end: false });
+    updateTask(id, { pid: child.pid ?? 0 });
+
+    const timeout = setTimeout(() => {
+      timedOut = true;
+      try { child.kill('SIGTERM'); } catch {}
+    }, timeoutMs);
+
+    child.on('error', (err) => {
+      clearTimeout(timeout);
+      stream.write(`${JSON.stringify({ ts: nowIso(), event: 'runner.error', error: err.message })}\n`);
+      stream.end();
+      updateTask(id, {
+        status: 'failed',
+        completedAt: nowIso(),
+        testResult: err.message,
+        note: `codex runner failed to start: ${err.message}`,
+      });
+    });
+
+    child.on('close', (code, signal) => {
+      clearTimeout(timeout);
+      const completedAt = nowIso();
+      const next = refreshCodexTaskResult({
+        ...getTask(id),
+        status: timedOut ? 'failed' : code === 0 ? 'success' : 'failed',
+        exitCode: code ?? undefined,
+        signal: signal ?? undefined,
+        completedAt,
+        updatedAt: completedAt,
+      });
+      stream.write(`${JSON.stringify({ ts: completedAt, event: 'runner.close', code, signal, status: next.status })}\n`);
+      stream.end();
+      updateTask(id, {
+        ...next,
+        note: timedOut ? `codex runner timed out after ${timeoutMs}ms` : `codex runner exited code=${code ?? '-'} signal=${signal ?? '-'}`,
+      });
+    });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    stream.write(`${JSON.stringify({ ts: nowIso(), event: 'runner.error', error: message })}\n`);
+    stream.end();
+    return updateTask(id, {
+      status: 'failed',
+      completedAt: nowIso(),
+      testResult: message,
+      note: `codex runner failed: ${message}`,
+    });
+  }
+
+  return getTask(id);
+}
+
+function refreshCodexRunnerTasks(): TaskRecord[] {
+  let changed = false;
+  const tasks = readTasks().map((task) => {
+    if (task.status === 'running' && task.pid && !isPidRunning(task.pid)) {
+      changed = true;
+      return refreshCodexTaskResult({
+        ...task,
+        status: 'failed',
+        completedAt: task.completedAt ?? nowIso(),
+        updatedAt: nowIso(),
+        notes: [
+          ...task.notes,
+          { ts: nowIso(), text: 'runner process is no longer alive; exact exit code was not captured' },
+        ],
+      });
+    }
+    return task.projectPath ? refreshCodexTaskResult(task) : task;
+  });
+  if (changed) writeTasks(tasks);
+  return tasks;
+}
+
+function refreshCodexTaskResult(task: TaskRecord): TaskRecord {
+  if (!task.projectPath) return task;
+  const hasGit = isGitWorkTree(task.projectPath);
+  const changedFiles = hasGit ? getChangedFiles(task.projectPath).map((file) => ({
+    path: file.path,
+    oldPath: file.oldPath,
+    status: file.status,
+    insertions: file.insertions,
+    deletions: file.deletions,
+  })) : [];
+  const diffPreview = hasGit ? truncate(getRawDiff(task.projectPath), 60_000) : '';
+  const lastMessage = task.resultFile && fs.existsSync(task.resultFile)
+    ? truncate(fs.readFileSync(task.resultFile, 'utf-8'), 20_000)
+    : '';
+  return {
+    ...task,
+    changedFiles,
+    diffPreview,
+    testResult: extractTestResult(lastMessage || (task.logFile ? readTextTail(task.logFile, 20_000) : '')) || task.testResult || 'No test result captured yet.',
+  };
+}
+
+function isGitWorkTree(projectPath: string): boolean {
+  try {
+    execFileSync('git', ['rev-parse', '--is-inside-work-tree'], {
+      cwd: projectPath,
+      stdio: 'ignore',
+    });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function cancelCodexRunnerTask(taskId: string): TaskRecord {
+  const task = getTask(taskId);
+  if (task.status === 'running' && task.pid) {
+    try {
+      process.kill(task.pid, 'SIGTERM');
+    } catch {}
+  }
+  return updateTask(taskId, {
+    status: 'cancelled',
+    completedAt: nowIso(),
+    note: 'cancelled by codex.cancel',
+  });
+}
+
+function readTextTail(file: string, maxBytes: number): string {
+  if (!fs.existsSync(file)) return '';
+  const stat = fs.statSync(file);
+  const start = Math.max(0, stat.size - maxBytes);
+  const fd = fs.openSync(file, 'r');
+  try {
+    const buffer = Buffer.alloc(stat.size - start);
+    fs.readSync(fd, buffer, 0, buffer.length, start);
+    return buffer.toString('utf-8');
+  } finally {
+    fs.closeSync(fd);
+  }
+}
+
+function extractTestResult(text: string): string {
+  const lines = text.split(/\r?\n/).filter(Boolean);
+  const matches = lines.filter((line) => /test|passed|failed|ok|exit|error/i.test(line)).slice(-12);
+  return matches.join('\n');
+}
+
+function shellQuote(value: string): string {
+  if (/^[A-Za-z0-9_./:=+-]+$/.test(value)) return value;
+  return `'${value.replace(/'/g, `'\\''`)}'`;
 }
 
 function readProcesses(): ProcessRecord[] {

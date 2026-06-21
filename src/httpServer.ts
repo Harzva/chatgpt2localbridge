@@ -8,6 +8,9 @@ import {
   isOAuthTokenAuthorized,
 } from './oauth.js';
 import { handleDashboardRequest } from './dashboard.js';
+import { runWithRequestContext, type SafeRequestContext, hashContextValue } from './requestContext.js';
+
+const BRIDGE_VERSION = '0.1.1';
 
 // ── HTTP Transport for ChatGPT MCP Connectors ───────────────────────────────
 //
@@ -55,7 +58,7 @@ export async function startHttpServer(
       return sendJson(res, 200, {
         status: 'ok',
         service: 'chatgpt2localbridge',
-        version: '0.1.0',
+        version: BRIDGE_VERSION,
       });
     }
 
@@ -66,11 +69,14 @@ export async function startHttpServer(
         return sendJson(res, 401, { error: 'Unauthorized' });
       }
       try {
+        const requestContext = buildRequestContext(req.headers, config);
         const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
         const server = createMcpServer(config);
         transport.onerror = (err) => console.error('[http] transport error:', err.message);
         await server.connect(transport);
-        await transport.handleRequest(req, res);
+        await runWithRequestContext(requestContext, async () => {
+          await transport.handleRequest(req, res);
+        });
         res.on('close', () => { transport.close().catch(() => {}); });
       } catch (err) {
         console.error('[http] MCP error:', err);
@@ -94,6 +100,40 @@ export async function startHttpServer(
   };
   process.on('SIGINT', shutdown);
   process.on('SIGTERM', shutdown);
+}
+
+function toHeaderValue(value: string | string[] | undefined): string | undefined {
+  if (!value) return undefined;
+  return Array.isArray(value) ? value[0] : value;
+}
+
+function buildRequestContext(headers: NodeJS.Dict<string | string[] | undefined>, config: BridgeConfig): SafeRequestContext {
+  const transportSessionId = toHeaderValue(headers['mcp-session-id']);
+  const requestId = toHeaderValue(headers['x-request-id']);
+  const conversationId = toHeaderValue(headers['x-openai-conversation-id'])
+    ?? toHeaderValue(headers['openai-conversation-id']);
+  const connectorProfile = toHeaderValue(headers['x-connector-profile'])
+    ?? toHeaderValue(headers['x-openai-connector-id'])
+    ?? toHeaderValue(headers['x-openai-app-id']);
+  const userAgent = toHeaderValue(headers['user-agent']);
+
+  const context: SafeRequestContext = {
+    source: 'http',
+    transportSessionId,
+    userAgent,
+    connectorProfile: connectorProfile || config.toolProfile,
+  };
+
+  if (requestId) {
+    context.requestId = requestId.slice(0, 240);
+    context.requestIdHash = hashContextValue(requestId);
+  }
+  if (conversationId) {
+    context.conversationId = conversationId.slice(0, 240);
+    context.conversationIdHash = hashContextValue(conversationId);
+  }
+
+  return context;
 }
 
 // ── Helpers ─────────────────────────────────────────────────────────────────

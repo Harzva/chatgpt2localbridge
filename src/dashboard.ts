@@ -21,7 +21,7 @@ export function handleDashboardRequest(
     }
     return sendJson(res, 200, {
       service: 'chatgpt2localbridge',
-      version: '0.1.0',
+      version: '0.1.1',
       oauthEnabled: config.oauth.enabled,
       publicBaseUrl: config.oauth.publicBaseUrl,
       dataDir: config.dataDir,
@@ -31,6 +31,7 @@ export function handleDashboardRequest(
       denyGlobs: config.policy.denyGlobs,
       shellEnabled: config.policy.shell.enabled,
       dashboardTokenConfigured: Boolean(config.dashboard.token),
+      toolProfile: config.toolProfile,
     });
   }
 
@@ -174,6 +175,7 @@ function renderDashboardHtml(config: BridgeConfig): string {
         ['OAuth', status.oauthEnabled ? 'enabled' : 'off'],
         ['Dashboard token', status.dashboardTokenConfigured ? 'configured' : 'missing'],
         ['Shell', status.shellEnabled ? 'enabled' : 'off'],
+        ['Tool profile', status.toolProfile || 'normal'],
       ];
       document.getElementById('runtime').innerHTML = rows.map(([k, v]) => '<div>' + esc(k) + '</div><div class="path" title="' + esc(v) + '">' + esc(v) + '</div>').join('');
       const roots = status.allowedProjectRoots || [];
