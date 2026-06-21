@@ -102,6 +102,26 @@ h1 {
   line-height: 1.7;
 }
 
+.hero-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 18px;
+}
+
+.hero-badges span {
+  display: inline-flex;
+  align-items: center;
+  min-height: 30px;
+  padding: 0 10px;
+  border: 1px solid #cfe2ff;
+  border-radius: 999px;
+  background: #e9f3ff;
+  color: var(--blue);
+  font-size: 13px;
+  font-weight: 800;
+}
+
 .actions {
   display: flex;
   gap: 12px;
@@ -150,6 +170,14 @@ h1 {
   margin: 0 0 18px;
   font-size: 30px;
   letter-spacing: 0;
+}
+
+.section-lede {
+  max-width: 820px;
+  margin: -6px 0 20px;
+  color: var(--muted);
+  font-size: 17px;
+  line-height: 1.7;
 }
 
 .grid {

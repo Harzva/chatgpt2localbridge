@@ -232,7 +232,7 @@ function renderResponsiveThumbnail() {
   .phone{position:absolute;right:420px;top:560px;width:160px;border:10px solid #17202a;border-radius:34px;box-shadow:0 26px 60px rgba(22,37,61,.22);background:#17202a}
   .steps{position:absolute;left:72px;bottom:84px;display:flex;gap:14px}
   .chip{padding:14px 18px;border-radius:999px;background:#fff;border:1px solid #d8e1ec;font-size:20px;font-weight:800}
-  </style></head><body><div class="wrap"><div class="kicker">MCP Connector for local workspaces</div><h1>ChatGPT meets approved local files.</h1><p>OAuth authorization, HTTPS tunnel options, and screenshot-first setup guides for humans and agents.</p><div class="steps"><div class="chip">OAuth</div><div class="chip">npx install</div><div class="chip">GitHub Pages</div></div><div class="desktop"><img src="../page-desktop.png" alt=""></div><div class="phone"><img src="../page-mobile.png" alt=""></div></div></body></html>`;
+  </style></head><body><div class="wrap"><div class="kicker">Codex / ChatGPT Plugin App</div><h1>Agents meet approved local workspaces.</h1><p>A local control console, OAuth MCP connector, and screenshot-first setup guides for building your own plugin apps.</p><div class="steps"><div class="chip">Plugin App</div><div class="chip">MCP tools</div><div class="chip">GitHub Pages</div></div><div class="desktop"><img src="../page-desktop.png" alt=""></div><div class="phone"><img src="../page-mobile.png" alt=""></div></div></body></html>`;
 }
 
 function renderArchitectureHorizontal() {
@@ -270,7 +270,7 @@ function renderMatrixThumbnail() {
   body{margin:0;width:1200px;height:675px;background:#17202a;font-family:Inter,Arial,sans-serif;color:#fff;display:grid;place-items:center}
   .card{width:1040px;height:540px;border-radius:34px;background:#f7fbff;color:#17202a;padding:40px;display:grid;grid-template-columns:1fr 420px;gap:34px;box-shadow:0 28px 80px rgba(0,0,0,.32)}
   h1{font-size:56px;line-height:1;margin:0 0 16px;letter-spacing:0}.tag{font-size:18px;color:#1769e0;font-weight:900;text-transform:uppercase;letter-spacing:.08em}.copy{font-size:24px;line-height:1.5;color:#526070}.preview{border:1px solid #d8e1ec;border-radius:18px;overflow:hidden;align-self:center}.preview img{display:block;width:100%}.badges{display:flex;gap:12px;margin-top:26px}.badge{background:#e9f3ff;color:#1769e0;border-radius:999px;padding:11px 14px;font-weight:800}
-  </style></head><body><div class="card"><div><div class="tag">ChatGPT2LocalBridge</div><h1>OAuth MCP bridge for approved files.</h1><div class="copy">A public-ready local connector with human and Computer Use setup guides.</div><div class="badges"><div class="badge">MCP</div><div class="badge">OAuth</div><div class="badge">Local-first</div></div></div><div class="preview"><img src="../screenshots/05-connector.png" alt=""></div></div></body></html>`;
+  </style></head><body><div class="card"><div><div class="tag">ChatGPT2LocalBridge</div><h1>Codex / ChatGPT plugin app.</h1><div class="copy">A public-ready local operator console with focused MCP tools, policy, traces, and setup guides.</div><div class="badges"><div class="badge">Plugin App</div><div class="badge">MCP</div><div class="badge">Local-first</div></div></div><div class="preview"><img src="../screenshots/05-connector.png" alt=""></div></div></body></html>`;
 }
 
 function renderSquareThumbnail() {
@@ -279,7 +279,7 @@ function renderSquareThumbnail() {
   .box{width:850px;height:850px;border-radius:56px;background:#fff;border:1px solid #d8e1ec;box-shadow:0 34px 90px rgba(18,31,56,.16);padding:70px;text-align:center}
   .logo{width:190px;height:190px;border-radius:42px;margin:0 auto 34px;border:1px solid #d8e1ec}.logo img{width:100%;height:100%;border-radius:42px}
   h1{font-size:72px;line-height:.98;margin:0 0 20px;letter-spacing:0}.copy{font-size:30px;line-height:1.35;color:#526070}.route{margin-top:42px;display:flex;justify-content:center;gap:12px}.dot{width:22px;height:22px;border-radius:999px;background:#1769e0}.dot:nth-child(2){background:#34c759}.dot:nth-child(3){background:#fbbf24}.dot:nth-child(4){background:#ef4444}
-  </style></head><body><div class="box"><div class="logo"><img src="../logo.png" alt=""></div><h1>Local files, approved by OAuth.</h1><div class="copy">A self-hosted MCP connector for ChatGPT.</div><div class="route"><div class="dot"></div><div class="dot"></div><div class="dot"></div><div class="dot"></div></div></div></body></html>`;
+  </style></head><body><div class="box"><div class="logo"><img src="../logo.png" alt=""></div><h1>Build local plugin apps for agents.</h1><div class="copy">Codex / ChatGPT tools with policy, traces, and a native control console.</div><div class="route"><div class="dot"></div><div class="dot"></div><div class="dot"></div><div class="dot"></div></div></div></body></html>`;
 }
 
 function renderStoryThumbnail() {
@@ -288,7 +288,7 @@ function renderStoryThumbnail() {
   .wrap{padding:92px 72px}.logo{width:150px;height:150px;border-radius:34px;background:#fff;margin-bottom:48px}.logo img{width:100%;height:100%;border-radius:34px}
   .kicker{font-size:26px;font-weight:900;color:#7db3ff;text-transform:uppercase;letter-spacing:.08em}h1{font-size:92px;line-height:.95;margin:18px 0 26px;letter-spacing:0}.copy{font-size:38px;line-height:1.42;color:#d7e3f5}
   .phone{margin-top:72px;border:10px solid #fff;border-radius:42px;overflow:hidden;box-shadow:0 30px 90px rgba(0,0,0,.38)}.phone img{display:block;width:100%}.chips{display:flex;flex-wrap:wrap;gap:16px;margin-top:46px}.chip{font-size:28px;font-weight:800;border:1px solid rgba(255,255,255,.22);border-radius:999px;padding:16px 22px;background:rgba(255,255,255,.08)}
-  </style></head><body><div class="wrap"><div class="logo"><img src="../logo.png" alt=""></div><div class="kicker">ChatGPT2LocalBridge</div><h1>Use ChatGPT with approved local workspaces.</h1><div class="copy">OAuth MCP connector, fixed HTTPS tunnels, and screenshot-first setup guides.</div><div class="chips"><div class="chip">npx</div><div class="chip">OAuth</div><div class="chip">Computer Use</div></div><div class="phone"><img src="../page-mobile.png" alt=""></div></div></body></html>`;
+  </style></head><body><div class="wrap"><div class="logo"><img src="../logo.png" alt=""></div><div class="kicker">Codex / ChatGPT Plugin App</div><h1>Give agents a safe local control surface.</h1><div class="copy">Focused MCP tools, OAuth tunnels, policy editing, traces, and screenshot-first setup guides.</div><div class="chips"><div class="chip">Plugin App</div><div class="chip">OAuth</div><div class="chip">Computer Use</div></div><div class="phone"><img src="../page-mobile.png" alt=""></div></div></body></html>`;
 }
 
 function escapeHtml(value) {

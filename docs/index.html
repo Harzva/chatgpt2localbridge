@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>ChatGPT2LocalBridge</title>
-  <meta name="description" content="OAuth MCP Connector for approved local files.">
+  <meta name="description" content="Codex / ChatGPT Plugin App for approved local workspaces.">
   <link rel="stylesheet" href="./styles.css">
 </head>
 <body>
@@ -29,9 +29,15 @@
     <main>
       <section class="hero">
         <div>
-          <div class="eyebrow">OAuth MCP Connector for local workspaces</div>
-          <h1>Let ChatGPT work with approved local files.</h1>
-          <p class="lede">Run an MCP bridge on your Mac or Linux machine, authorize ChatGPT through OAuth, and keep the filesystem boundary under your control.</p>
+          <div class="eyebrow">Codex / ChatGPT Plugin App</div>
+          <h1>Let agents work with approved local workspaces.</h1>
+          <p class="lede">Run a local plugin app on your Mac or Linux machine, expose a focused MCP tool surface to ChatGPT or Codex-style agents, and keep policy, traces, files, and risky actions under your control.</p>
+          <div class="hero-badges" aria-label="project positioning">
+            <span>Codex Plugin App</span>
+            <span>ChatGPT Plugin App</span>
+            <span>MCP Connector</span>
+            <span>Local-first</span>
+          </div>
           <div class="actions">
             <a class="button primary" href="./quickstart.html">Start in 5 minutes</a>
             <a class="button" href="./human-tutorial.html">See the walkthrough</a>
@@ -51,6 +57,25 @@
           <div class="node">localhost:3838</div>
           <div class="node">Local MCP</div>
           <div class="node">Approved Workspace</div>
+        </div>
+      </section>
+
+      <section class="section">
+        <h2>Build Your Own Plugin App</h2>
+        <p class="section-lede">ChatGPT2LocalBridge is also a reference shape for agent-facing plugin apps: one focused tool surface, one local control panel, and one safety policy the operator can inspect.</p>
+        <div class="grid">
+          <article class="card">
+            <h3>Agent interface</h3>
+            <p>Expose concise MCP tools with schemas and safe defaults, such as `project.bundle`, `policy.read`, or `codex.task_start`.</p>
+          </article>
+          <article class="card">
+            <h3>Human control</h3>
+            <p>Give the operator a local app for status, policy, traces, logs, downloads, diffs, and cancel buttons.</p>
+          </article>
+          <article class="card">
+            <h3>Safe distribution</h3>
+            <p>Ship docs, screenshots, GitHub Pages, install commands, and copyable test prompts so users can verify the plugin app quickly.</p>
+          </article>
         </div>
       </section>
 

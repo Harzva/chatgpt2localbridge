@@ -1,8 +1,10 @@
 <div align="center">
   <img src="./docs/assets/logo.png" alt="ChatGPT2LocalBridge logo" width="180" />
   <h1>ChatGPT2LocalBridge</h1>
-  <p><strong>OAuth MCP Connector for approved local files.</strong></p>
+  <p><strong>Codex / ChatGPT Plugin App for approved local workspaces.</strong></p>
   <p>
+    <img alt="Codex Plugin App" src="https://img.shields.io/badge/Codex-Plugin%20App-7c3aed.svg" />
+    <img alt="ChatGPT Plugin App" src="https://img.shields.io/badge/ChatGPT-Plugin%20App-10a37f.svg" />
     <img alt="License" src="https://img.shields.io/badge/license-MIT-blue.svg" />
     <img alt="Node" src="https://img.shields.io/badge/node-%3E%3D20-339933.svg" />
     <img alt="Rust" src="https://img.shields.io/badge/rust-native%20preview-b7410e.svg" />
@@ -38,20 +40,35 @@
 </p>
 <!-- showcase:end -->
 
-ChatGPT2LocalBridge is a self-hosted MCP server that lets ChatGPT access approved local workspaces after authorization. It is designed for people who want ChatGPT to inspect or operate on local project files without uploading the whole workspace elsewhere.
+ChatGPT2LocalBridge is a self-hosted **Codex / ChatGPT Plugin App**: a local desktop/operator app plus an MCP connector that lets ChatGPT access approved local workspaces after authorization. It is designed for people who want ChatGPT or Codex-style agents to inspect, bundle, download, trace, or operate on local project files without uploading the whole workspace elsewhere.
 
 The TypeScript build is the full OAuth MCP connector. A small Rust native
 preview also lives in [`rust/chatgpt2localbridge-rs`](./rust/chatgpt2localbridge-rs)
 for the local operator console, health checks, activity APIs, and a minimal MCP
 smoke surface.
 
-It is not a legacy ChatGPT plugin. It is best described as:
+In this repository, **plugin app** means a small agent-facing product surface: a local app, a policy file, a tool catalog, trace records, and one or more ChatGPT/Codex-visible MCP tools. It is not a legacy ChatGPT plugin. It is best described as:
 
+- **Codex Plugin App**
+- **ChatGPT Plugin App**
 - **MCP Server**
 - **ChatGPT Custom Connector**
 - **OAuth Local Workspace Bridge**
 
 > Unofficial project. Not affiliated with OpenAI.
+
+## Build Your Own Plugin App
+
+This project is also an invitation to build more agent-facing plugin apps. A good plugin app should give ChatGPT or Codex a focused tool surface, keep risky operations behind policy, and give the human operator a clear local console.
+
+| Layer | What to build | Example in this repo |
+| --- | --- | --- |
+| Agent interface | MCP tools with concise names, schemas, and safe defaults | `project.bundle`, `policy.read`, `codex.task_start` |
+| Human control | A local app that shows status, policy, traces, and cancel buttons | Native macOS console |
+| Safety policy | Approved roots, deny globs, auth mode, shell restrictions | `bridge.policy.json` |
+| Distribution | README, GitHub Pages, screenshots, setup prompts, install scripts | `docs/`, `npx github:...`, macOS app bundle |
+
+If you build your own plugin app, keep the default workflow narrow and readable: one clear problem, one safe tool surface, one local control panel, and one copyable ChatGPT test prompt.
 
 ## Route
 

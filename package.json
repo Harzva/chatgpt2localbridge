@@ -1,7 +1,7 @@
 {
   "name": "chatgpt2localbridge",
   "version": "0.1.0",
-  "description": "OAuth-enabled MCP connector that lets ChatGPT access approved local workspaces.",
+  "description": "Codex/ChatGPT plugin app and OAuth-enabled MCP connector for approved local workspaces.",
   "type": "module",
   "main": "dist/index.js",
   "bin": {
@@ -52,6 +52,10 @@
   "keywords": [
     "mcp",
     "chatgpt",
+    "codex",
+    "plugin-app",
+    "chatgpt-plugin-app",
+    "codex-plugin-app",
     "connector",
     "oauth",
     "local-files",
