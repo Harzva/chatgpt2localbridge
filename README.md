@@ -10,6 +10,7 @@
     <img alt="Rust" src="https://img.shields.io/badge/rust-native%20preview-b7410e.svg" />
     <img alt="MCP" src="https://img.shields.io/badge/MCP-Streamable%20HTTP-1769e0.svg" />
     <img alt="Status" src="https://img.shields.io/badge/status-alpha-f59e0b.svg" />
+    <img alt="GitHub stars" src="https://img.shields.io/github/stars/Harzva/chatgpt2localbridge?style=social" />
   </p>
   <p>
     <a href="./docs/index.html">Pages source</a>
@@ -323,6 +324,16 @@ smoke tests, and connector troubleshooting notes. See
 Field note: keep `xhigh` / `XHigh` mode off by default. In local testing it
 produced more connector/tool-call errors than the normal profile, so use it only
 for focused debugging with trace capture enabled.
+
+## Star History
+
+<a href="https://www.star-history.com/?repos=Harzva%2Fchatgpt2localbridge&type=date&legend=top-left">
+ <picture>
+   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=Harzva/chatgpt2localbridge&type=date&theme=dark&legend=top-left" />
+   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/chart?repos=Harzva/chatgpt2localbridge&type=date&legend=top-left" />
+   <img alt="Star History Chart for Harzva/chatgpt2localbridge" src="https://api.star-history.com/chart?repos=Harzva/chatgpt2localbridge&type=date&legend=top-left" />
+ </picture>
+</a>
 
 ## Security Defaults
 
