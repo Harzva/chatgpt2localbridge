@@ -3724,8 +3724,9 @@ final class BridgeModel: ObservableObject {
                 await startService()
             }
             timer = Timer.scheduledTimer(withTimeInterval: 3.0, repeats: true) { [weak self] _ in
+                guard let appState = self else { return }
                 Task { @MainActor in
-                    await self?.refresh()
+                    await appState.refresh()
                 }
             }
         } catch {
@@ -5920,8 +5921,8 @@ struct TraceStats {
         downloads = items.filter { $0.kind == .download }.count
         errors = items.filter { $0.status == "error" || $0.kind == .error }.count
         sessions = Set(items.compactMap(\.sessionId).filter { !$0.isEmpty }).count
-        tasks = Set(items.compactMap(\.taskId).filter { !$0.isEmpty }).count
-        projects = Set(items.compactMap(\.projectPath).filter { !$0.isEmpty }).count
+        tasks = Set(items.map(\.taskId).filter { !$0.isEmpty }).count
+        projects = Set(items.map(\.projectPath).filter { !$0.isEmpty }).count
     }
 }
 
