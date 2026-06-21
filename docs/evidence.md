@@ -61,6 +61,9 @@ an OAuth custom connector. The useful troubleshooting finding was:
 - Linux packaging and deployment need more field testing.
 - Linux connector profiles should stay separate from macOS profiles so each
   machine keeps a narrow policy.
+- Mobile ChatGPT can call the connector after the app is enabled for the
+  conversation. This gives a Remote-Codex-like workflow from a phone without
+  requiring a separate tun-mode remote desktop session.
 - Contributions and PRs are welcome, especially for Linux service installers,
   Cloudflare Tunnel examples, systemd hardening, and distro-specific docs.
 
@@ -82,3 +85,4 @@ an OAuth custom connector. The useful troubleshooting finding was:
   tools were missing before the profile update.
 - `docs/assets/xhs-promo.png`: shareable Xiaohongshu-style product card.
 - `docs/assets/xhs-community.png`: shareable community/PR card with Linux todo.
+- `docs/assets/xhs-mobile-remote.png`: shareable mobile workflow card.

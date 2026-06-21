@@ -5,6 +5,8 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 APP_NAME="ChatGPT2LocalBridge"
 BUNDLE_ID="com.harzva.chatgpt2localbridge.rs"
 VERSION="0.1.0"
+MACOS_ARCH="${MACOS_ARCH:-$(uname -m)}"
+SWIFT_TARGET="${MACOS_SWIFT_TARGET:-$MACOS_ARCH-apple-macosx14.0}"
 BUILD_DIR="$ROOT_DIR/build/macos"
 APP_PATH="$BUILD_DIR/$APP_NAME.app"
 CONTENTS_DIR="$APP_PATH/Contents"
@@ -104,7 +106,7 @@ PLIST
 swiftc \
   -O \
   -parse-as-library \
-  -target arm64-apple-macosx14.0 \
+  -target "$SWIFT_TARGET" \
   -module-cache-path "$MODULE_CACHE_DIR" \
   -framework SwiftUI \
   -framework AppKit \

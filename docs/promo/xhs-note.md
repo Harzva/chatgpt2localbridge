@@ -10,17 +10,21 @@
 
 1. `docs/assets/xhs-promo.png`
    首图，放项目定位、核心能力、实测数字和安全提醒。
-2. ChatGPT 工具调用截图
+2. `docs/assets/xhs-mobile-remote.png`
+   手机端工作流图：强调 ChatGPT 手机端也能调用 connector 干活，体验接近 Remote Codex，但不需要额外开启 tun 模式。
+3. ChatGPT 手机端实测截图
+   用你发的两张手机截图：一张展示手机端对话发起任务，一张展示文件已经写入并返回项目目录。发布前把完整本机路径打码或裁切。
+4. ChatGPT 工具调用截图
    使用你发的工具调用列表截图，重点露出 `file_read_path`、`local_workspace_action`、返回 `CHATGPT_WRITE_TEST.md` 内容这几个证据点。发布前把完整本机路径打码或裁切成 `<approved-workspace>/...`。
-3. shell_exec 策略拦截图
+5. shell_exec 策略拦截图
    使用你发的 `shell_exec` 截图，重点说明：高危命令措辞被 bridge 安全策略拦截，改成纯文本计划后成功写入 TXT。这证明它不是裸 shell 代理。
-4. macOS App 控制台截图
+6. macOS App 控制台截图
    放连接器 URL、OAuth、工具数量、Trace/调用记录区域，证明它不是纯命令行 demo，而是有本地控制面。
-5. `docs/assets/xhs-community.png`
+7. `docs/assets/xhs-community.png`
    欢迎开发者共建和 PR，突出 Linux 适配 Todo。
-6. `docs/evidence.md` 截图
+8. `docs/evidence.md` 截图
    展示测试摘要：`chatgpt-app tools ok (10)`、`file_write ok`、`cloud download write ok`、`oauth metadata ok`。
-7. GitHub README / Pages 截图
+9. GitHub README / Pages 截图
    展示开源仓库、安装方式、GitHub Pages 教程入口。
 
 ## Main Copy
@@ -40,6 +44,8 @@
 - OAuth 元数据通过：`oauth metadata ok`
 - macOS App 已安装到本地，可以看连接器字段、工具数量、策略和 Trace 记录
 - `shell_exec` 里包含高危命令措辞时被安全策略拦截，改成纯文本后再写入成功
+- 手机端 ChatGPT 也可以直接调这个 connector 干活，体验很像 Remote Codex，不需要额外开启 tun 模式
+- 这是 ChatGPT App / Custom Connector 官方能力路线，不模拟网页登录，整体更安全、更稳定
 - Linux 版本还需要更多适配和实测，欢迎开发者 PR
 
 现在它能做的事：
@@ -72,6 +78,7 @@ GitHub: Harzva/chatgpt2localbridge
 - 云端文件下载到本地
 - macOS App 显示工具、策略、Trace
 - 高危 shell 命令措辞会被策略拦截
+- 手机端也能调 connector 处理本地项目
 - `chatgpt-app` profile 暴露 10 个工具
 
 注意：别默认开 xhigh / XHigh，实测报错更多。先普通模式跑通，再调试。
@@ -83,12 +90,14 @@ GitHub: Harzva/chatgpt2localbridge
 ## Screenshot Captions
 
 - 图 1：项目首图，把本地文件安全挂到 ChatGPT。
-- 图 2：ChatGPT 实际工具调用，`file_read_path` 成功返回本地测试文件内容。
-- 图 3：`shell_exec` 安全策略拦截，高危措辞不会直接执行。
-- 图 4：macOS App 控制台，能看连接器 URL、OAuth、工具数量和 Trace。
-- 图 5：欢迎开发者共建，Linux 适配 Todo 欢迎 PR。
-- 图 6：Evidence 文档，记录 build/test、写入、下载、OAuth 测试结果。
-- 图 7：GitHub README，开源安装和教程入口。
+- 图 2：手机端也能调用 ChatGPT connector，像 Remote Codex 一样让本地项目动起来。
+- 图 3：手机端实测截图，ChatGPT 已经创建/读取本地项目文件。
+- 图 4：ChatGPT 实际工具调用，`file_read_path` 成功返回本地测试文件内容。
+- 图 5：`shell_exec` 安全策略拦截，高危措辞不会直接执行。
+- 图 6：macOS App 控制台，能看连接器 URL、OAuth、工具数量和 Trace。
+- 图 7：欢迎开发者共建，Linux 适配 Todo 欢迎 PR。
+- 图 8：Evidence 文档，记录 build/test、写入、下载、OAuth 测试结果。
+- 图 9：GitHub README，开源安装和教程入口。
 
 ## Tags
 

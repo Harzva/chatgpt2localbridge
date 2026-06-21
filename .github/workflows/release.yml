@@ -1,0 +1,172 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Release version, for example v0.1.1
+        required: true
+        default: v0.1.1
+
+permissions:
+  contents: write
+
+jobs:
+  package-node:
+    name: Package npm tarball
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      - name: Test
+        run: npm test
+
+      - name: Pack npm package
+        run: |
+          mkdir -p release
+          npm pack --pack-destination release
+
+      - name: Upload npm artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: npm-package
+          path: release/*.tgz
+
+  package-macos:
+    name: Package macOS app
+    runs-on: macos-14
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      - name: Build macOS app
+        run: bash scripts/build-macos-app.sh
+
+      - name: Zip app bundle
+        run: |
+          mkdir -p release
+          ditto -c -k --keepParent build/macos/ChatGPT2LocalBridge.app "release/ChatGPT2LocalBridge-macos-${{ runner.arch }}.app.zip"
+          cp rust/chatgpt2localbridge-rs/target/release/chatgpt2localbridge-rs "release/chatgpt2localbridge-rs-macos-${{ runner.arch }}"
+          (cd release && shasum -a 256 * > SHA256SUMS.txt)
+
+      - name: Upload macOS artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-release
+          path: release/*
+
+  package-windows:
+    name: Package Windows binary
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      - name: Build TypeScript
+        run: npm run build
+
+      - name: Build Rust preview
+        run: cargo build --release --manifest-path rust/chatgpt2localbridge-rs/Cargo.toml
+
+      - name: Prepare Windows zip
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force release\windows | Out-Null
+          Copy-Item rust\chatgpt2localbridge-rs\target\release\chatgpt2localbridge-rs.exe release\windows\
+          Copy-Item README.md release\windows\
+          Copy-Item bridge.policy.example.json release\windows\
+          Copy-Item .env.example release\windows\
+          Copy-Item assets\mcp-tools.json release\windows\
+          @"
+          # ChatGPT2LocalBridge Windows Preview
+
+          This archive contains the Rust-native local console preview.
+
+          Run:
+
+          ```powershell
+          .\chatgpt2localbridge-rs.exe --http 3842
+          ```
+
+          Open:
+
+          ```text
+          http://127.0.0.1:3842/app
+          ```
+
+          The full OAuth MCP bridge is still the Node/TypeScript package.
+          "@ | Set-Content -Encoding UTF8 release\windows\README-WINDOWS.md
+          Compress-Archive -Path release\windows\* -DestinationPath release\ChatGPT2LocalBridge-windows-x64-rust-preview.zip
+          Get-FileHash release\ChatGPT2LocalBridge-windows-x64-rust-preview.zip -Algorithm SHA256 |
+            ForEach-Object { "$($_.Hash.ToLower())  ChatGPT2LocalBridge-windows-x64-rust-preview.zip" } |
+            Set-Content -Encoding ASCII release\SHA256SUMS-windows.txt
+
+      - name: Upload Windows artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-release
+          path: release/*
+
+  publish-release:
+    name: Publish GitHub Release
+    needs:
+      - package-node
+      - package-macos
+      - package-windows
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: release-assets
+          merge-multiple: true
+
+      - name: Resolve tag
+        id: tag
+        run: |
+          if [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
+            echo "tag=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+          else
+            echo "tag=${{ github.event.inputs.version }}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.tag.outputs.tag }}
+          name: ChatGPT2LocalBridge ${{ steps.tag.outputs.tag }}
+          draft: false
+          prerelease: true
+          generate_release_notes: true
+          files: release-assets/*
