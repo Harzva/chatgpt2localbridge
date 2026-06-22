@@ -3008,7 +3008,6 @@ struct CodexUsageAnalyticsWorkspaceView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             CodexAnalyticsAPISettingsPanel()
-            CodexUsageResultsPanel()
             CodexAnalyticsScopePanel()
         }
     }
@@ -3122,7 +3121,6 @@ struct CodexAnalyticsAPISettingsPanel: View {
                     ConnectorEditableField(label: "API key env", text: $model.codexAnalyticsAPIKeyEnv)
                     ConnectorEditableField(label: "Group by", text: $model.codexAnalyticsGroupBy)
                     ConnectorEditableField(label: "Usage group", text: $model.codexAnalyticsGroup)
-                    ConnectorEditableField(label: "Window days", text: $model.codexAnalyticsWindowDays)
                 }
                 InspectorBlock(title: "Official endpoints", value: model.codexAnalyticsEndpointsText)
             }
@@ -3131,10 +3129,6 @@ struct CodexAnalyticsAPISettingsPanel: View {
                 Button { model.saveCodexAnalytics() } label: {
                     Label("Save analytics config", systemImage: "square.and.arrow.down")
                 }
-                Button { Task { await model.fetchCodexUsage() } } label: {
-                    Label(model.codexUsageIsLoading ? "Fetching" : "Fetch Usage", systemImage: "arrow.down.circle")
-                }
-                .disabled(model.codexUsageIsLoading)
                 Button { model.copyCodexAnalyticsEnv() } label: {
                     Label("Copy sync command", systemImage: "doc.on.clipboard")
                 }
@@ -3147,84 +3141,6 @@ struct CodexAnalyticsAPISettingsPanel: View {
         .padding(14)
         .frame(maxWidth: .infinity, alignment: .topLeading)
         .background(PanelBackground())
-    }
-}
-
-struct CodexUsageResultsPanel: View {
-    @EnvironmentObject private var model: BridgeModel
-
-    private var totals: CodexUsageTotals {
-        CodexUsageTotals(rows: model.codexUsageRows)
-    }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            PanelHeader(title: "Fetched Usage", symbol: "chart.bar.xaxis")
-            LazyVGrid(columns: [GridItem(.adaptive(minimum: 150), spacing: 10)], alignment: .leading, spacing: 10) {
-                InlineInspectorMetric(label: "Rows", value: "\(model.codexUsageRows.count)", symbol: "tablecells", tint: .blue)
-                InlineInspectorMetric(label: "Threads", value: totals.threads.displayValue, symbol: "bubble.left.and.bubble.right", tint: .purple)
-                InlineInspectorMetric(label: "Turns", value: totals.turns.displayValue, symbol: "arrow.triangle.turn.up.right.diamond", tint: .orange)
-                InlineInspectorMetric(label: "Credits", value: totals.credits.displayValue, symbol: "creditcard", tint: .green)
-                InlineInspectorMetric(label: "Input tokens", value: totals.inputTokens.displayValue, symbol: "arrow.down.doc", tint: .mint)
-                InlineInspectorMetric(label: "Cached tokens", value: totals.cachedInputTokens.displayValue, symbol: "externaldrive.badge.checkmark", tint: .teal)
-                InlineInspectorMetric(label: "Output tokens", value: totals.outputTokens.displayValue, symbol: "arrow.up.doc", tint: .pink)
-            }
-
-            if !model.codexUsageLastFetched.isEmpty {
-                Text("Last fetched \(model.codexUsageLastFetched)")
-                    .font(.system(size: 11, design: .monospaced))
-                    .foregroundStyle(.secondary)
-            }
-
-            if model.codexUsageRows.isEmpty {
-                EmptyState(text: "No usage rows fetched yet. Fill Workspace ID, expose the API key as the configured env var, then click Fetch Usage.")
-            } else {
-                VStack(spacing: 8) {
-                    ForEach(model.codexUsageRows.prefix(10)) { row in
-                        CodexUsageRowView(row: row, maxValue: max(1, model.codexUsageRows.map(\.displayMagnitude).max() ?? 1))
-                    }
-                }
-            }
-        }
-        .padding(14)
-        .frame(maxWidth: .infinity, alignment: .topLeading)
-        .background(PanelBackground())
-    }
-}
-
-struct CodexUsageRowView: View {
-    let row: CodexUsageRow
-    let maxValue: Double
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 10) {
-                Text(row.dateLabel)
-                    .font(.system(size: 11, design: .monospaced))
-                    .foregroundStyle(.secondary)
-                    .frame(width: 86, alignment: .leading)
-                Text(row.groupLabel)
-                    .font(.system(size: 12, weight: .semibold))
-                    .lineLimit(1)
-                Spacer(minLength: 0)
-                Text(row.summaryText)
-                    .font(.system(size: 11, design: .monospaced))
-                    .foregroundStyle(.secondary)
-            }
-            GeometryReader { proxy in
-                RoundedRectangle(cornerRadius: 999, style: .continuous)
-                    .fill(Color.accentColor.opacity(0.12))
-                    .overlay(alignment: .leading) {
-                        RoundedRectangle(cornerRadius: 999, style: .continuous)
-                            .fill(Color.accentColor.opacity(0.55))
-                            .frame(width: max(4, proxy.size.width * CGFloat(row.displayMagnitude / maxValue)))
-                    }
-            }
-            .frame(height: 8)
-        }
-        .padding(10)
-        .background(Color(nsColor: .controlBackgroundColor))
-        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
     }
 }
 
@@ -4325,10 +4241,6 @@ final class BridgeModel: ObservableObject {
     @Published var codexAnalyticsAPIKeyEnv = "CODEX_ANALYTICS_API_KEY"
     @Published var codexAnalyticsGroupBy = "day"
     @Published var codexAnalyticsGroup = "workspace"
-    @Published var codexAnalyticsWindowDays = "7"
-    @Published var codexUsageRows: [CodexUsageRow] = []
-    @Published var codexUsageLastFetched = ""
-    @Published var codexUsageIsLoading = false
 
     let port = ProcessInfo.processInfo.environment["LOCALBRIDGE_PORT"] ?? "3842"
     let connectorDataDir: URL
@@ -4938,8 +4850,7 @@ final class BridgeModel: ObservableObject {
                 workspaceID: codexAnalyticsWorkspaceID.trimmingCharacters(in: .whitespacesAndNewlines),
                 apiKeyEnv: codexAnalyticsAPIKeyEnv.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty ?? "CODEX_ANALYTICS_API_KEY",
                 groupBy: codexAnalyticsGroupBy.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty ?? "day",
-                group: codexAnalyticsGroup.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty ?? "workspace",
-                windowDays: codexAnalyticsWindowDays.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty ?? "7"
+                group: codexAnalyticsGroup.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty ?? "workspace"
             )
             let encoder = JSONEncoder()
             encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
@@ -4957,77 +4868,12 @@ final class BridgeModel: ObservableObject {
             codexAnalyticsAPIKeyEnv = "CODEX_ANALYTICS_API_KEY"
             codexAnalyticsGroupBy = "day"
             codexAnalyticsGroup = "workspace"
-            codexAnalyticsWindowDays = "7"
             return
         }
         codexAnalyticsWorkspaceID = document.workspaceID
         codexAnalyticsAPIKeyEnv = document.apiKeyEnv.isEmpty ? "CODEX_ANALYTICS_API_KEY" : document.apiKeyEnv
         codexAnalyticsGroupBy = document.groupBy.isEmpty ? "day" : document.groupBy
         codexAnalyticsGroup = document.group.isEmpty ? "workspace" : document.group
-        codexAnalyticsWindowDays = document.windowDays?.isEmpty == false ? (document.windowDays ?? "7") : "7"
-    }
-
-    func fetchCodexUsage() async {
-        let workspace = codexAnalyticsWorkspaceID.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !workspace.isEmpty else {
-            lastError = "Workspace ID is required for Codex usage fetch"
-            return
-        }
-        let keyEnv = codexAnalyticsAPIKeyEnv.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty ?? "CODEX_ANALYTICS_API_KEY"
-        guard let apiKey = ProcessInfo.processInfo.environment[keyEnv], !apiKey.isEmpty else {
-            lastError = "Missing \(keyEnv) in the app environment. Launch the app with that env var or use the copy sync command in Terminal."
-            return
-        }
-
-        codexUsageIsLoading = true
-        defer { codexUsageIsLoading = false }
-
-        do {
-            let now = Date()
-            let days = min(90, max(1, Int(codexAnalyticsWindowDays.trimmingCharacters(in: .whitespacesAndNewlines)) ?? 7))
-            let start = Int(now.addingTimeInterval(TimeInterval(-days * 24 * 60 * 60)).timeIntervalSince1970)
-            let end = Int(now.timeIntervalSince1970)
-            let encodedWorkspace = workspace.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? workspace
-            var allRows: [CodexUsageRow] = []
-            var pageCursor: String?
-            for _ in 0..<10 {
-                var components = URLComponents(string: "https://api.chatgpt.com/v1/analytics/codex/workspaces/\(encodedWorkspace)/usage")
-                var items = [
-                    URLQueryItem(name: "start_time", value: "\(start)"),
-                    URLQueryItem(name: "end_time", value: "\(end)"),
-                    URLQueryItem(name: "group_by", value: codexAnalyticsGroupBy.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty ?? "day"),
-                    URLQueryItem(name: "limit", value: "100")
-                ]
-                if let group = codexAnalyticsGroup.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty {
-                    items.append(URLQueryItem(name: "group", value: group))
-                }
-                if let pageCursor {
-                    items.append(URLQueryItem(name: "page", value: pageCursor))
-                }
-                components?.queryItems = items
-                guard let url = components?.url else { throw BridgeError.badHTTP }
-
-                var request = URLRequest(url: url)
-                request.timeoutInterval = 20
-                request.addValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
-                request.addValue("application/json", forHTTPHeaderField: "Accept")
-                let (data, response) = try await URLSession.shared.data(for: request)
-                guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
-                    let message = String(data: data, encoding: .utf8)?.prefix(240) ?? "HTTP error"
-                    throw BridgeError.message("Codex usage fetch failed: \(message)")
-                }
-
-                allRows.append(contentsOf: try parseCodexUsageRows(data))
-                guard let next = nextCodexAnalyticsPageCursor(data) else { break }
-                pageCursor = next
-            }
-
-            codexUsageRows = sortCodexUsageRows(allRows)
-            codexUsageLastFetched = compactTimestamp()
-            lastError = nil
-        } catch {
-            lastError = error.localizedDescription
-        }
     }
 
     private func loadConnectorMachines() {
@@ -6141,133 +5987,8 @@ private extension String {
     }
 }
 
-enum BridgeError: LocalizedError {
+enum BridgeError: Error {
     case badHTTP
-    case message(String)
-
-    var errorDescription: String? {
-        switch self {
-        case .badHTTP: return "Unexpected HTTP response"
-        case .message(let text): return text
-        }
-    }
-}
-
-func parseCodexUsageRows(_ data: Data) throws -> [CodexUsageRow] {
-    let json = try JSONSerialization.jsonObject(with: data)
-    let rawRows = flattenUsageRecords(json)
-    let rows: [CodexUsageRow] = rawRows.compactMap { record -> CodexUsageRow? in
-        let date = stringValue(record["start_time"])
-            ?? stringValue(record["date"])
-            ?? stringValue(record["day"])
-            ?? stringValue(record["bucket"])
-            ?? "-"
-        let group = stringValue(record["client"])
-            ?? stringValue(record["user_email"])
-            ?? stringValue(record["user_id"])
-            ?? stringValue(record["model"])
-            ?? stringValue(record["project_id"])
-            ?? stringValue(record["group"])
-            ?? "workspace"
-        let threads = numberValue(record["threads"])
-        let turns = numberValue(record["turns"])
-        let credits = numberValue(record["credits"])
-        let inputTokens = numberValue(record["text_input_tokens"])
-            + numberValue(record["input_tokens"])
-        let cachedInputTokens = numberValue(record["text_cached_input_tokens"])
-            + numberValue(record["cached_input_tokens"])
-        let outputTokens = numberValue(record["text_output_tokens"])
-            + numberValue(record["output_tokens"])
-        guard threads + turns + credits + inputTokens + cachedInputTokens + outputTokens > 0 else { return nil }
-        return CodexUsageRow(
-            dateLabel: compactDateLabel(date),
-            groupLabel: group,
-            threads: threads,
-            turns: turns,
-            credits: credits,
-            inputTokens: inputTokens,
-            cachedInputTokens: cachedInputTokens,
-            outputTokens: outputTokens
-        )
-    }
-    return sortCodexUsageRows(rows)
-}
-
-private func sortCodexUsageRows(_ rows: [CodexUsageRow]) -> [CodexUsageRow] {
-    rows
-    .sorted { lhs, rhs in
-        if lhs.dateLabel == rhs.dateLabel {
-            return lhs.displayMagnitude > rhs.displayMagnitude
-        }
-        return lhs.dateLabel > rhs.dateLabel
-    }
-}
-
-private func nextCodexAnalyticsPageCursor(_ data: Data) -> String? {
-    guard let record = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return nil }
-    if let page = record["page"] as? [String: Any],
-       (page["has_more"] as? Bool) == true {
-        return stringValue(page["next_page"])
-    }
-    if (record["has_more"] as? Bool) == true {
-        return stringValue(record["next_page"])
-    }
-    return nil
-}
-
-private func flattenUsageRecords(_ value: Any) -> [[String: Any]] {
-    if let rows = value as? [[String: Any]] {
-        return rows.flatMap(flattenUsageRecords)
-    }
-    guard let record = value as? [String: Any] else { return [] }
-    let nested = ["data", "results", "records"].flatMap { key -> [[String: Any]] in
-        guard let item = record[key] else { return [] }
-        return flattenUsageRecords(item)
-    }
-    if !nested.isEmpty {
-        let inherited = record.filter { key, _ in !["data", "results", "records", "page"].contains(key) }
-        return nested.map { child in
-            inherited.merging(child) { _, childValue in childValue }
-        }
-    }
-    return [record]
-}
-
-private func numberValue(_ value: Any?) -> Double {
-    if let number = value as? NSNumber { return number.doubleValue }
-    if let string = value as? String, let number = Double(string.replacingOccurrences(of: ",", with: "")) {
-        return number
-    }
-    return 0
-}
-
-private func stringValue(_ value: Any?) -> String? {
-    if let string = value as? String, !string.isEmpty { return string }
-    if let number = value as? NSNumber { return number.stringValue }
-    return nil
-}
-
-private func compactDateLabel(_ value: String) -> String {
-    if let seconds = Double(value), seconds > 1_000_000 {
-        return String(Date(timeIntervalSince1970: seconds).ISO8601Format().prefix(10))
-    }
-    if value.count >= 10 {
-        return String(value.prefix(10))
-    }
-    return value
-}
-
-extension Double {
-    var displayValue: String {
-        if self >= 1_000_000 { return String(format: "%.1fM", self / 1_000_000) }
-        if self >= 1_000 { return String(format: "%.1fK", self / 1_000) }
-        if rounded() == self { return String(Int(self)) }
-        return String(format: "%.2f", self)
-    }
-
-    var compactTokenValue: String {
-        "\(displayValue) tok"
-    }
 }
 
 struct Health: Decodable {
@@ -6463,53 +6184,6 @@ struct CodexAnalyticsDocument: Codable {
     let apiKeyEnv: String
     let groupBy: String
     let group: String
-    let windowDays: String?
-}
-
-struct CodexUsageRow: Identifiable {
-    let id = UUID()
-    let dateLabel: String
-    let groupLabel: String
-    let threads: Double
-    let turns: Double
-    let credits: Double
-    let inputTokens: Double
-    let cachedInputTokens: Double
-    let outputTokens: Double
-
-    var displayMagnitude: Double {
-        max(threads, turns, credits, inputTokens / 1000, cachedInputTokens / 1000, outputTokens / 1000, 1)
-    }
-
-    var summaryText: String {
-        let parts = [
-            threads > 0 ? "threads \(threads.displayValue)" : nil,
-            turns > 0 ? "turns \(turns.displayValue)" : nil,
-            credits > 0 ? "credits \(credits.displayValue)" : nil,
-            inputTokens > 0 ? "in \(inputTokens.compactTokenValue)" : nil,
-            cachedInputTokens > 0 ? "cached \(cachedInputTokens.compactTokenValue)" : nil,
-            outputTokens > 0 ? "out \(outputTokens.compactTokenValue)" : nil,
-        ].compactMap { $0 }
-        return parts.isEmpty ? "-" : parts.joined(separator: "  ")
-    }
-}
-
-struct CodexUsageTotals {
-    let threads: Double
-    let turns: Double
-    let credits: Double
-    let inputTokens: Double
-    let cachedInputTokens: Double
-    let outputTokens: Double
-
-    init(rows: [CodexUsageRow]) {
-        threads = rows.reduce(0) { $0 + $1.threads }
-        turns = rows.reduce(0) { $0 + $1.turns }
-        credits = rows.reduce(0) { $0 + $1.credits }
-        inputTokens = rows.reduce(0) { $0 + $1.inputTokens }
-        cachedInputTokens = rows.reduce(0) { $0 + $1.cachedInputTokens }
-        outputTokens = rows.reduce(0) { $0 + $1.outputTokens }
-    }
 }
 
 struct ToolExposure {

@@ -49,16 +49,9 @@ The panel shows:
 - usage `group`
 - copyable endpoint list
 - copyable sync command
-- `Fetch Usage` button for the official `/usage` endpoint
 
 Secrets are not stored in the app. Put the real API key in your shell, launchd
 environment, or secrets manager under the env name configured in the panel.
-
-`Fetch Usage` reads the API key from the configured environment variable in the
-native app process, follows official pagination, and draws the returned usage
-rows as an in-app summary chart. If the app was opened from Finder and cannot
-see that env var, use **Copy sync command** and run the helper from a terminal
-where the key is available.
 
 ## Optional Snapshot Sync
 
