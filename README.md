@@ -43,6 +43,35 @@
   </p>
 </div>
 
+## Linux One-Click Prompt
+
+Repository: `https://github.com/Harzva/chatgpt2localbridge`
+
+Copy this prompt to a Linux shell agent:
+
+```text
+Install ChatGPT2LocalBridge from https://github.com/Harzva/chatgpt2localbridge on this Linux host.
+Use one command, keep secrets local, and do not print .env.local, OAuth tokens,
+ngrok authtokens, cookies, or unlock codes into chat.
+
+Run:
+curl -fsSL https://raw.githubusercontent.com/Harzva/chatgpt2localbridge/main/scripts/linux-one-click-install.sh | bash
+
+After install, report the local health result, the ChatGPT Connector fields, and
+the tunnel choice. If ngrok is selected, ask me for NGROK_AUTHTOKEN and optional
+NGROK_DOMAIN. If Cloudflare is selected, explain quick tunnel vs named tunnel.
+```
+
+Or run it yourself:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Harzva/chatgpt2localbridge/main/scripts/linux-one-click-install.sh | bash
+```
+
+The installer prints every Connector field you need to fill in ChatGPT, plus
+ngrok and Cloudflare registration links, tunnel tradeoffs, and an agent-safe
+setup prompt.
+
 ![ChatGPT2LocalBridge cover](./docs/assets/cover.png)
 
 <!-- showcase:start -->
@@ -119,6 +148,19 @@ The intended product shape is a control plane, not just a raw shell bridge:
 - **Local app** shows policy, tool calls, logs, diffs, downloads, and cancellable tasks.
 
 ## 30-Second Install
+
+Linux one-click installer:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Harzva/chatgpt2localbridge/main/scripts/linux-one-click-install.sh | bash
+```
+
+Optional Linux tunnel helpers:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Harzva/chatgpt2localbridge/main/scripts/linux-one-click-install.sh | TUNNEL=cloudflare bash
+curl -fsSL https://raw.githubusercontent.com/Harzva/chatgpt2localbridge/main/scripts/linux-one-click-install.sh | TUNNEL=ngrok NGROK_AUTHTOKEN=... NGROK_DOMAIN=my-bridge.ngrok-free.app bash
+```
 
 Temporary GitHub npx install, no clone required:
 
@@ -246,6 +288,24 @@ When the authorization page opens, enter the unlock code from `.env.local`. Do n
 ### Linux Server Setup
 
 Linux works the same way as Mac mini: run one bridge next to the files you want ChatGPT to see, expose that bridge through HTTPS, then create a separate ChatGPT connector for that machine.
+
+One-click install directly on the Linux host:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Harzva/chatgpt2localbridge/main/scripts/linux-one-click-install.sh | bash
+```
+
+Common options:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Harzva/chatgpt2localbridge/main/scripts/linux-one-click-install.sh | WORKSPACE_ROOT=/srv/workspace BRIDGE_PORT=3900 bash
+```
+
+The installer prints the exact ChatGPT Connector fields, local health checks,
+ngrok registration requirements, Cloudflare registration requirements, and a
+longer agent prompt for safe remote setup.
+
+Deploy from an existing local clone to a remote Linux host:
 
 ```bash
 REMOTE=linux-box \

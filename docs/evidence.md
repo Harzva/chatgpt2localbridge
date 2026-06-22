@@ -66,9 +66,39 @@ an OAuth custom connector. The useful troubleshooting finding was:
   local TXT artifact. This is expected behavior and is useful evidence that the
   bridge is not a raw unrestricted command proxy.
 
+## Linux Field Evidence
+
+Date: 2026-06-22
+
+A Linux host field run confirmed the same connector pattern works outside the
+Mac mini setup:
+
+- The repository was cloned on Linux, dependencies were installed, and the
+  TypeScript build completed.
+- `node dist/index.js init --root <approved-linux-workspace>` generated
+  `.env.local` and `bridge.policy.json`.
+- The default ports were already occupied, so the bridge was started on the next
+  available test port and `/health` returned `status: ok`.
+- A Cloudflare Quick Tunnel exposed the local bridge over HTTPS and `/health`
+  worked through the public URL.
+- OAuth metadata reflected the tunnel origin after
+  `LOCALBRIDGE_PUBLIC_BASE_URL` was updated.
+- The ChatGPT Connector fields used the public `/mcp`, `/oauth/authorize`,
+  `/oauth/token`, and `/oauth/register` URLs.
+- ngrok installation succeeded in a follow-up attempt, but tunnel startup
+  correctly stopped at `ERR_NGROK_4018` until the operator supplies an ngrok
+  authtoken.
+- ChatGPT successfully called connector tools against a Linux workspace path;
+  policy still constrained which paths could be read.
+
+This is the field evidence behind the Linux one-click installer and the new
+agent setup prompt. Raw logs, private local paths, unlock codes, and tokens are
+intentionally excluded.
+
 ## Community Todo
 
-- Linux packaging and deployment need more field testing.
+- Linux packaging and deployment now have a one-click installer, but still need
+  more distro and long-running service testing.
 - Linux connector profiles should stay separate from macOS profiles so each
   machine keeps a narrow policy.
 - Mobile ChatGPT can call the connector after the app is enabled for the

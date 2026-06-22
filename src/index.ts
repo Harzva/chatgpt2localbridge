@@ -71,7 +71,7 @@ function printHelp(): void {
   console.log(`ChatGPT2LocalBridge
 
 Usage:
-  chatgpt2localbridge init --root <workspace-root> [--public-url <https-url>]
+  chatgpt2localbridge init --root <workspace-root> [--public-url <https-url>] [--port 3838]
   chatgpt2localbridge --http 3838
   chatgpt2localbridge
 
@@ -80,6 +80,7 @@ Commands:
 
 Options:
   --http     Start MCP Streamable HTTP server on a port. Default: 3838.
+  --port     Port written during init. Default: 3838.
   --help     Show this help.
 
 Examples:
@@ -91,7 +92,8 @@ Examples:
 
 function initProject(args: string[]): void {
   const rootArg = optionValue(args, '--root') ?? process.cwd();
-  const publicUrl = optionValue(args, '--public-url') ?? 'https://YOUR-FIXED-DOMAIN.ngrok-free.dev';
+  const publicUrl = normalizePublicUrl(optionValue(args, '--public-url') ?? 'https://YOUR-PUBLIC-TUNNEL.example.com');
+  const port = optionValue(args, '--port') ?? '3838';
   const force = args.includes('--force');
   const workspaceRoot = path.resolve(expandHome(rootArg));
   const cwd = process.cwd();
@@ -135,7 +137,7 @@ function initProject(args: string[]): void {
   }, null, 2) + '\n', force);
 
   writeIfMissing(envPath, [
-    'export LOCALBRIDGE_PORT=3838',
+    `export LOCALBRIDGE_PORT=${port}`,
     `export LOCALBRIDGE_DATA_DIR="${dataDir}"`,
     `export LOCALBRIDGE_LOG_DIR="${path.join(dataDir, 'logs')}"`,
     `export LOCALBRIDGE_POLICY_PATH="${policyPath}"`,
@@ -151,8 +153,9 @@ function initProject(args: string[]): void {
   console.log(`Policy: ${policyPath}`);
   console.log(`Env:    ${envPath} (contains your local unlock code; do not commit)`);
   console.log('Next:   set -a; source .env.local; set +a');
-  console.log('Run:    chatgpt2localbridge --http 3838');
-  console.log('App:    http://127.0.0.1:3838/app');
+  console.log(`Run:    chatgpt2localbridge --http ${port}`);
+  console.log(`App:    http://127.0.0.1:${port}/app`);
+  printConnectorSummary({ publicUrl, port, workspaceRoot, envPath });
 }
 
 function optionValue(args: string[], name: string): string | undefined {
@@ -164,6 +167,59 @@ function expandHome(value: string): string {
   if (value === '~') return os.homedir();
   if (value.startsWith('~/')) return path.join(os.homedir(), value.slice(2));
   return value;
+}
+
+function normalizePublicUrl(value: string): string {
+  return value.replace(/\/+$/, '');
+}
+
+function printConnectorSummary(options: {
+  publicUrl: string;
+  port: string;
+  workspaceRoot: string;
+  envPath: string;
+}): void {
+  const { publicUrl, port, workspaceRoot, envPath } = options;
+  console.log(`
+Tunnel choices:
+  ngrok:
+    Register: https://dashboard.ngrok.com/signup
+    Use when you want the fastest fixed development domain.
+    Requires NGROK_AUTHTOKEN; set NGROK_DOMAIN for a stable Connector URL.
+
+  Cloudflare Tunnel:
+    Register: https://dash.cloudflare.com/sign-up
+    Quick Tunnel is good for smoke tests, but the trycloudflare URL can change.
+    Use a named tunnel for stable production URLs.
+
+ChatGPT Connector fields:
+  Name: ChatGPT2LocalBridge Linux
+  Server URL: ${publicUrl}/mcp
+  Authentication: OAuth
+
+Advanced OAuth fields:
+  Auth URL: ${publicUrl}/oauth/authorize
+  Token URL: ${publicUrl}/oauth/token
+  Registration URL: ${publicUrl}/oauth/register
+  Authorization server base: ${publicUrl}
+  Resource: ${publicUrl}/mcp
+  Scopes: workspace:read workspace:write shell:exec
+  OIDC: off
+
+Authorization page:
+  Bridge unlock code: read LOCALBRIDGE_OAUTH_UNLOCK_CODE from ${envPath} on this host.
+  Do not paste unlock codes, tokens, cookies, or .env contents into public chats, issues, screenshots, or commits.
+
+Local checks:
+  curl -sS http://127.0.0.1:${port}/health
+  http://127.0.0.1:${port}/app
+
+Agent setup prompt:
+  Configure ChatGPT2LocalBridge from https://github.com/Harzva/chatgpt2localbridge on this Linux host.
+  Keep secrets local. Do not print .env.local, OAuth tokens, ngrok authtokens, cookies, or unlock codes.
+  Use workspace root ${workspaceRoot}. Keep allowed roots narrow.
+  Verify /health, expose one HTTPS tunnel, set LOCALBRIDGE_PUBLIC_BASE_URL to the public https origin, then report the Connector fields and verification status only.
+`);
 }
 
 function writeIfMissing(filePath: string, content: string, force: boolean): void {

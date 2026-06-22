@@ -45,6 +45,7 @@
     "scripts/deploy-linux-bridge.sh",
     "scripts/export-mcp-tools.mjs",
     "scripts/install-launchd.sh",
+    "scripts/linux-one-click-install.sh",
     "scripts/mac-screenshot.sh",
     "scripts/render-doc-assets.mjs",
     "scripts/stop-launchd.sh",
