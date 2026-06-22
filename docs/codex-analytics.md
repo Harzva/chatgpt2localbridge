@@ -18,6 +18,21 @@ therefore uses a local snapshot format first:
 When a workspace has enterprise API access, an automatic sync job can later write
 the same local snapshot format without changing the dashboard.
 
+## Auth Boundary
+
+There are two different auth layers:
+
+| Auth | What it unlocks | Does it read Codex usage analytics? |
+| --- | --- | --- |
+| ChatGPT Connector OAuth for this bridge | Lets ChatGPT call `https://your-bridge/mcp` through ChatGPT2LocalBridge | No |
+| Codex Enterprise Analytics API key | Lets your admin/reporting job call the official Codex analytics endpoints | Yes, when scoped to `codex.enterprise.analytics.read` |
+| Browser session cookies from `chatgpt.com` | Lets a human view the analytics page in the browser | Do not use as an integration boundary |
+
+So getting OAuth working for the bridge is necessary for connector tools, but it
+does not grant the bridge access to
+`https://chatgpt.com/codex/cloud/settings/analytics`. Use the official Analytics
+API for programmatic usage data.
+
 ## Dashboard Import
 
 Open the local console:

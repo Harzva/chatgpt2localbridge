@@ -3,7 +3,8 @@
 import fs from 'node:fs';
 
 const API_BASE = 'https://api.chatgpt.com/v1/analytics/codex';
-const apiKey = process.env.CODEX_ANALYTICS_API_KEY;
+const apiKeyEnv = process.env.CODEX_ANALYTICS_API_KEY_ENV || 'CODEX_ANALYTICS_API_KEY';
+const apiKey = process.env[apiKeyEnv];
 const workspaceId = process.env.CODEX_WORKSPACE_ID;
 const groupBy = process.env.GROUP_BY ?? 'day';
 const group = process.env.GROUP ?? 'workspace';
@@ -116,6 +117,7 @@ Required:
   CODEX_WORKSPACE_ID=...        ChatGPT workspace id
 
 Optional:
+  CODEX_ANALYTICS_API_KEY_ENV=CODEX_ANALYTICS_API_KEY
   START_TIME=1765152000         Inclusive Unix timestamp. Default: 7 days ago.
   END_TIME=1765756800           Exclusive Unix timestamp. Default: now.
   GROUP_BY=day|week             Default: day.

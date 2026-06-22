@@ -2947,6 +2947,7 @@ struct CodexProviderWorkspaceView: View {
                 CodexProviderSettingsPanel()
                 CodexProviderStatusPanel()
             }
+            CodexAnalyticsAPISettingsPanel()
             CodexProviderHelpPanel()
         }
     }
@@ -3029,6 +3030,52 @@ struct CodexProviderHelpPanel: View {
                 ProviderHintCard(title: "Official", text: "Use this when Codex CLI is already logged in. It is the least moving parts.", tint: .green)
                 ProviderHintCard(title: "API", text: "Use OpenAI-compatible endpoints by setting Base URL and API key env.", tint: .blue)
                 ProviderHintCard(title: "sub2api", text: "Run sub2api separately, then point Base URL at its /v1 endpoint.", tint: .mint)
+            }
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .topLeading)
+        .background(PanelBackground())
+    }
+}
+
+struct CodexAnalyticsAPISettingsPanel: View {
+    @EnvironmentObject private var model: BridgeModel
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            PanelHeader(title: "Codex Analytics API", symbol: "chart.xyaxis.line")
+            Text("ChatGPT Connector OAuth only authorizes ChatGPT to call this bridge. Official Codex usage data needs a separate Enterprise Analytics API key scoped to codex.enterprise.analytics.read.")
+                .font(.system(size: 11))
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 210), spacing: 10)], alignment: .leading, spacing: 10) {
+                InlineInspectorMetric(label: "Base URL", value: "api.chatgpt.com/v1/analytics/codex", symbol: "network", tint: .blue)
+                InlineInspectorMetric(label: "Scope", value: "codex.enterprise.analytics.read", symbol: "key.fill", tint: .orange)
+                InlineInspectorMetric(label: "Window", value: "up to 90 days", symbol: "calendar", tint: .purple)
+            }
+
+            HStack(alignment: .top, spacing: 12) {
+                VStack(alignment: .leading, spacing: 8) {
+                    ConnectorEditableField(label: "Workspace ID", text: $model.codexAnalyticsWorkspaceID)
+                    ConnectorEditableField(label: "API key env", text: $model.codexAnalyticsAPIKeyEnv)
+                    ConnectorEditableField(label: "Group by", text: $model.codexAnalyticsGroupBy)
+                    ConnectorEditableField(label: "Usage group", text: $model.codexAnalyticsGroup)
+                }
+                InspectorBlock(title: "Official endpoints", value: model.codexAnalyticsEndpointsText)
+            }
+
+            HStack(spacing: 8) {
+                Button { model.saveCodexAnalytics() } label: {
+                    Label("Save analytics config", systemImage: "square.and.arrow.down")
+                }
+                Button { model.copyCodexAnalyticsEnv() } label: {
+                    Label("Copy sync command", systemImage: "doc.on.clipboard")
+                }
+                Button { model.copyCodexAnalyticsEndpoints() } label: {
+                    Label("Copy endpoints", systemImage: "link")
+                }
+                Spacer()
             }
         }
         .padding(14)
@@ -4110,6 +4157,10 @@ final class BridgeModel: ObservableObject {
     @Published var codexProviderProfile = ""
     @Published var codexProviderHome = ""
     @Published var codexProviderAPIKeyEnv = "OPENAI_API_KEY"
+    @Published var codexAnalyticsWorkspaceID = ""
+    @Published var codexAnalyticsAPIKeyEnv = "CODEX_ANALYTICS_API_KEY"
+    @Published var codexAnalyticsGroupBy = "day"
+    @Published var codexAnalyticsGroup = "workspace"
 
     let port = ProcessInfo.processInfo.environment["LOCALBRIDGE_PORT"] ?? "3842"
     let connectorDataDir: URL
@@ -4121,6 +4172,7 @@ final class BridgeModel: ObservableObject {
     let languagePath: URL
     let machinesPath: URL
     let providerPath: URL
+    let analyticsPath: URL
     let pidPath: URL
     let enginePath: String
 
@@ -4138,6 +4190,7 @@ final class BridgeModel: ObservableObject {
         languagePath = dataDir.appendingPathComponent("app-language")
         machinesPath = dataDir.appendingPathComponent("machines.json")
         providerPath = dataDir.appendingPathComponent("codex-provider.json")
+        analyticsPath = dataDir.appendingPathComponent("codex-analytics.json")
         pidPath = dataDir.appendingPathComponent("bridge-rs.pid")
         enginePath = Bundle.main.path(forResource: "chatgpt2localbridge-rs", ofType: nil) ?? ""
     }
@@ -4148,6 +4201,7 @@ final class BridgeModel: ObservableObject {
             loadLanguage()
             loadToolProfile()
             loadCodexProvider()
+            loadCodexAnalytics()
             loadConnectorMachines()
             loadToolCatalog()
             refreshConnectorActivity()
@@ -4693,6 +4747,39 @@ final class BridgeModel: ObservableObject {
         codexProviderAPIKeyEnv = document.apiKeyEnv.isEmpty ? "OPENAI_API_KEY" : document.apiKeyEnv
     }
 
+    func saveCodexAnalytics() {
+        do {
+            try FileManager.default.createDirectory(at: dataDir, withIntermediateDirectories: true)
+            let document = CodexAnalyticsDocument(
+                workspaceID: codexAnalyticsWorkspaceID.trimmingCharacters(in: .whitespacesAndNewlines),
+                apiKeyEnv: codexAnalyticsAPIKeyEnv.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty ?? "CODEX_ANALYTICS_API_KEY",
+                groupBy: codexAnalyticsGroupBy.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty ?? "day",
+                group: codexAnalyticsGroup.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty ?? "workspace"
+            )
+            let encoder = JSONEncoder()
+            encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+            try encoder.encode(document).write(to: analyticsPath, options: [.atomic])
+            try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: analyticsPath.path)
+            lastError = nil
+        } catch {
+            lastError = "Failed to save Codex analytics config: \(error.localizedDescription)"
+        }
+    }
+
+    private func loadCodexAnalytics() {
+        guard let data = try? Data(contentsOf: analyticsPath),
+              let document = try? JSONDecoder().decode(CodexAnalyticsDocument.self, from: data) else {
+            codexAnalyticsAPIKeyEnv = "CODEX_ANALYTICS_API_KEY"
+            codexAnalyticsGroupBy = "day"
+            codexAnalyticsGroup = "workspace"
+            return
+        }
+        codexAnalyticsWorkspaceID = document.workspaceID
+        codexAnalyticsAPIKeyEnv = document.apiKeyEnv.isEmpty ? "CODEX_ANALYTICS_API_KEY" : document.apiKeyEnv
+        codexAnalyticsGroupBy = document.groupBy.isEmpty ? "day" : document.groupBy
+        codexAnalyticsGroup = document.group.isEmpty ? "workspace" : document.group
+    }
+
     private func loadConnectorMachines() {
         if let data = try? Data(contentsOf: machinesPath),
            let document = try? JSONDecoder().decode(ConnectorMachinesDocument.self, from: data),
@@ -4840,6 +4927,45 @@ final class BridgeModel: ObservableObject {
         }
         lines.append("# Set \(codexProviderAPIKeyEnv.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty ?? "OPENAI_API_KEY") separately; do not paste secrets into ChatGPT.")
         return lines.joined(separator: "\n")
+    }
+
+    var codexAnalyticsEndpointsText: String {
+        let workspace = codexAnalyticsWorkspaceID.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty ?? "{workspace_id}"
+        let root = "https://api.chatgpt.com/v1/analytics/codex/workspaces/\(workspace)"
+        return [
+            "GET \(root)/usage",
+            "GET \(root)/code_reviews",
+            "GET \(root)/code_review_responses",
+            "",
+            "Required query:",
+            "start_time=<unix_seconds>",
+            "end_time=<unix_seconds>",
+            "group_by=day|week",
+            "group=workspace for usage totals",
+            "",
+            "Auth:",
+            "Bearer token from \(codexAnalyticsAPIKeyEnv.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty ?? "CODEX_ANALYTICS_API_KEY")",
+            "Scope: codex.enterprise.analytics.read"
+        ].joined(separator: "\n")
+    }
+
+    var codexAnalyticsSyncCommandText: String {
+        let keyEnv = codexAnalyticsAPIKeyEnv.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty ?? "CODEX_ANALYTICS_API_KEY"
+        let workspace = codexAnalyticsWorkspaceID.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty ?? "YOUR_WORKSPACE_ID"
+        let groupBy = codexAnalyticsGroupBy.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty ?? "day"
+        let group = codexAnalyticsGroup.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty ?? "workspace"
+        return [
+            "# Put the real key in your shell or secret manager first:",
+            "# export \(keyEnv)=...",
+            "",
+            "CODEX_ANALYTICS_API_KEY_ENV=\(keyEnv) \\",
+            "CODEX_WORKSPACE_ID=\(workspace) \\",
+            "GROUP_BY=\(groupBy) \\",
+            "GROUP=\(group) \\",
+            "LOCALBRIDGE_URL=http://127.0.0.1:\(port) \\",
+            "LOCALBRIDGE_DASHBOARD_TOKEN=<dashboard-token> \\",
+            "node scripts/sync-codex-analytics.mjs"
+        ].joined(separator: "\n")
     }
 
     var riskAlerts: [RiskAlert] {
@@ -5003,6 +5129,16 @@ final class BridgeModel: ObservableObject {
     func copyCodexProviderEnv() {
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(codexProviderEnvText, forType: .string)
+    }
+
+    func copyCodexAnalyticsEnv() {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(codexAnalyticsSyncCommandText, forType: .string)
+    }
+
+    func copyCodexAnalyticsEndpoints() {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(codexAnalyticsEndpointsText, forType: .string)
     }
 
     func codexLogPreview(for task: CodexTaskRecord?) -> String {
@@ -5947,6 +6083,13 @@ struct CodexProviderDocument: Codable {
     let profile: String
     let codexHome: String
     let apiKeyEnv: String
+}
+
+struct CodexAnalyticsDocument: Codable {
+    let workspaceID: String
+    let apiKeyEnv: String
+    let groupBy: String
+    let group: String
 }
 
 struct ToolExposure {
