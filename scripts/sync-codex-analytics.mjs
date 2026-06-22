@@ -14,8 +14,6 @@ const endpoints = (process.env.ENDPOINTS ?? 'usage,code_reviews,code_review_resp
   .map((item) => item.trim())
   .filter(Boolean);
 const outPath = process.env.OUT ?? 'codex-analytics-snapshot.json';
-const localBridgeUrl = process.env.LOCALBRIDGE_URL?.replace(/\/+$/, '');
-const dashboardToken = process.env.LOCALBRIDGE_DASHBOARD_TOKEN;
 
 if (process.argv.includes('--help') || process.argv.includes('-h')) {
   printHelp();
@@ -49,25 +47,6 @@ for (const endpoint of endpoints) {
 
 fs.writeFileSync(outPath, `${JSON.stringify(snapshot, null, 2)}\n`, { mode: 0o600 });
 console.log(`[codex-analytics] wrote ${outPath}`);
-
-if (localBridgeUrl) {
-  if (!dashboardToken) {
-    throw new Error('LOCALBRIDGE_DASHBOARD_TOKEN is required when LOCALBRIDGE_URL is set.');
-  }
-  const res = await fetch(`${localBridgeUrl}/app/api/codex-analytics/import`, {
-    method: 'POST',
-    headers: {
-      'content-type': 'application/json',
-      'x-localbridge-dashboard-token': dashboardToken,
-    },
-    body: JSON.stringify(snapshot),
-  });
-  if (!res.ok) {
-    throw new Error(`LocalBridge import failed: ${res.status} ${await res.text()}`);
-  }
-  const body = await res.json();
-  console.log(`[codex-analytics] imported ${body.pointCount ?? 0} normalized points`);
-}
 
 async function fetchEndpoint(endpoint) {
   let page;
@@ -124,12 +103,9 @@ Optional:
   GROUP=workspace               Usage endpoint group. Default: workspace.
   ENDPOINTS=usage,code_reviews,code_review_responses
   OUT=codex-analytics-snapshot.json
-  LOCALBRIDGE_URL=http://127.0.0.1:3838
-  LOCALBRIDGE_DASHBOARD_TOKEN=...
 
 Example:
   CODEX_ANALYTICS_API_KEY=... CODEX_WORKSPACE_ID=... \\
-  LOCALBRIDGE_URL=http://127.0.0.1:3838 LOCALBRIDGE_DASHBOARD_TOKEN=... \\
   node scripts/sync-codex-analytics.mjs
 `);
 }

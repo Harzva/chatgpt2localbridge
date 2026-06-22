@@ -206,6 +206,7 @@ enum AppWorkspace: String, CaseIterable, Identifiable {
     case policy
     case tools
     case provider
+    case usage
     case trace
     case codex
     case exchange
@@ -224,6 +225,7 @@ enum AppWorkspace: String, CaseIterable, Identifiable {
         case .policy: return language == .zh ? "策略中心" : "Policy Center"
         case .tools: return language == .zh ? "工具目录" : "Tool Catalog"
         case .provider: return language == .zh ? "Provider 配置" : "Codex Provider"
+        case .usage: return language == .zh ? "Usage 分析" : "Codex Usage"
         case .trace: return language == .zh ? "调用记录" : "Trace Studio"
         case .codex: return language == .zh ? "Codex 任务" : "Codex Runner"
         case .exchange: return language == .zh ? "文件交换" : "Files & Exchange"
@@ -242,6 +244,7 @@ enum AppWorkspace: String, CaseIterable, Identifiable {
         case .policy: return language == .zh ? "根目录、技能、Shell 规则" : "roots, skills, shell rules"
         case .tools: return language == .zh ? "分层 MCP 工具面" : "tiered MCP tool surface"
         case .provider: return language == .zh ? "官方 / API / sub2api" : "official, API, sub2api"
+        case .usage: return language == .zh ? "官方 Analytics API" : "official Analytics API"
         case .trace: return language == .zh ? "时间线、表格、详情" : "timeline, table, inspector"
         case .codex: return language == .zh ? "本地 Codex CLI 任务" : "local Codex CLI tasks"
         case .exchange: return language == .zh ? "读取、打包、下载" : "reads, bundles, downloads"
@@ -256,6 +259,7 @@ enum AppWorkspace: String, CaseIterable, Identifiable {
         case .policy: return "checklist.checked"
         case .tools: return "wrench.and.screwdriver.fill"
         case .provider: return "server.rack"
+        case .usage: return "chart.xyaxis.line"
         case .trace: return "waveform.path.ecg.rectangle"
         case .codex: return "sparkles.rectangle.stack.fill"
         case .exchange: return "arrow.left.arrow.right.square.fill"
@@ -270,6 +274,7 @@ enum AppWorkspace: String, CaseIterable, Identifiable {
         case .policy: return .indigo
         case .tools: return .teal
         case .provider: return .mint
+        case .usage: return .pink
         case .trace: return .orange
         case .codex: return .purple
         case .exchange: return .cyan
@@ -502,6 +507,8 @@ struct MainWorkspace: View {
                     ToolCatalogWorkspaceView()
                 case .provider:
                     CodexProviderWorkspaceView()
+                case .usage:
+                    CodexUsageAnalyticsWorkspaceView()
                 case .trace:
                     TraceStudioView()
                 case .codex:
@@ -2997,6 +3004,15 @@ struct CodexProviderWorkspaceView: View {
     }
 }
 
+struct CodexUsageAnalyticsWorkspaceView: View {
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            CodexAnalyticsAPISettingsPanel()
+            CodexAnalyticsScopePanel()
+        }
+    }
+}
+
 struct CodexProviderSettingsPanel: View {
     @EnvironmentObject private var model: BridgeModel
 
@@ -3121,6 +3137,26 @@ struct CodexAnalyticsAPISettingsPanel: View {
                 }
                 Spacer()
             }
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .topLeading)
+        .background(PanelBackground())
+    }
+}
+
+struct CodexAnalyticsScopePanel: View {
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            PanelHeader(title: "What This Unlocks", symbol: "sparkle.magnifyingglass")
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 220), spacing: 12)], alignment: .leading, spacing: 12) {
+                ProviderHintCard(title: "Usage", text: "Threads, turns, credits, clients, users, and token buckets from the official usage endpoint.", tint: .blue)
+                ProviderHintCard(title: "Code Review", text: "Review volume, generated comments, and P0/P1/P2 priority breakdowns.", tint: .purple)
+                ProviderHintCard(title: "Engagement", text: "Replies and reaction breakdowns for Codex review comments.", tint: .pink)
+            }
+            Text("This is native-app operator configuration. It does not add an MCP tool and does not read browser cookies from chatgpt.com.")
+                .font(.system(size: 11))
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
         }
         .padding(14)
         .frame(maxWidth: .infinity, alignment: .topLeading)
@@ -5022,8 +5058,6 @@ final class BridgeModel: ObservableObject {
             "CODEX_WORKSPACE_ID=\(workspace) \\",
             "GROUP_BY=\(groupBy) \\",
             "GROUP=\(group) \\",
-            "LOCALBRIDGE_URL=http://127.0.0.1:\(port) \\",
-            "LOCALBRIDGE_DASHBOARD_TOKEN=<dashboard-token> \\",
             "node scripts/sync-codex-analytics.mjs"
         ].joined(separator: "\n")
     }

@@ -1,139 +1,72 @@
-# Codex Analytics Integration
+# Codex Usage Analytics
 
-ChatGPT2LocalBridge can keep a local, operator-controlled copy of Codex usage
-analytics for deeper analysis in the local dashboard.
-
-## Why Local Import First
-
-Codex Enterprise exposes analytics for administrator and governance workflows,
-but the browser analytics page is not a stable integration boundary. The bridge
-therefore uses a local snapshot format first:
-
-- paste or post sanitized JSON snapshots into the dashboard
-- store snapshots in the local data directory
-- redact sensitive raw fields before persistence
-- normalize values into `date + metric + category + value`
-- show totals, top segments, daily peaks, and short insights in `/app`
-
-When a workspace has enterprise API access, an automatic sync job can later write
-the same local snapshot format without changing the dashboard.
+ChatGPT2LocalBridge includes a native-app panel for Codex Enterprise usage
+analytics configuration. This is an app-side operator feature, not an MCP tool.
 
 ## Auth Boundary
 
-There are two different auth layers:
-
-| Auth | What it unlocks | Does it read Codex usage analytics? |
+| Auth | What it unlocks | Reads official usage analytics? |
 | --- | --- | --- |
-| ChatGPT Connector OAuth for this bridge | Lets ChatGPT call `https://your-bridge/mcp` through ChatGPT2LocalBridge | No |
-| Codex Enterprise Analytics API key | Lets your admin/reporting job call the official Codex analytics endpoints | Yes, when scoped to `codex.enterprise.analytics.read` |
-| Browser session cookies from `chatgpt.com` | Lets a human view the analytics page in the browser | Do not use as an integration boundary |
+| ChatGPT Connector OAuth for this bridge | Lets ChatGPT call `https://your-bridge/mcp` | No |
+| Codex Enterprise Analytics API key | Lets an admin/reporting job call official Codex analytics endpoints | Yes, with `codex.enterprise.analytics.read` |
+| Browser cookies from `chatgpt.com` | Lets a human view the web analytics page | Do not use as an integration boundary |
 
-So getting OAuth working for the bridge is necessary for connector tools, but it
-does not grant the bridge access to
-`https://chatgpt.com/codex/cloud/settings/analytics`. Use the official Analytics
-API for programmatic usage data.
+## Official Analytics API
 
-## Dashboard Import
-
-Open the local console:
+Base URL:
 
 ```text
-http://127.0.0.1:3838/app
+https://api.chatgpt.com/v1/analytics/codex
 ```
 
-Enter `LOCALBRIDGE_DASHBOARD_TOKEN`, then use **Codex Analytics Import**.
-
-Minimal `Skills used` snapshot:
-
-```json
-{
-  "source": "chatgpt-codex-analytics",
-  "metric": "skills_used",
-  "series": [
-    {
-      "name": "Roadmp Writer",
-      "data": [
-        { "date": "2026-06-18", "value": 65 }
-      ]
-    },
-    {
-      "name": "Verification Before Completion",
-      "data": [
-        { "date": "2026-06-18", "value": 7 }
-      ]
-    },
-    {
-      "name": "Other",
-      "data": [
-        { "date": "2026-06-18", "value": 107 }
-      ]
-    }
-  ]
-}
-```
-
-API-style rows are also accepted:
-
-```json
-{
-  "source": "codex-enterprise-analytics-api",
-  "workspace_id": "workspace-redacted",
-  "data": [
-    {
-      "start_time": "2026-06-18T00:00:00Z",
-      "client": "codex_cloud",
-      "threads": 12,
-      "turns": 74,
-      "text_input_tokens": 120000,
-      "text_output_tokens": 18000
-    }
-  ]
-}
-```
-
-## Local API
-
-All endpoints require the dashboard token.
-
-```bash
-curl -sS \
-  -H "x-localbridge-dashboard-token: $LOCALBRIDGE_DASHBOARD_TOKEN" \
-  http://127.0.0.1:3838/app/api/codex-analytics
-```
-
-```bash
-curl -sS \
-  -H "content-type: application/json" \
-  -H "x-localbridge-dashboard-token: $LOCALBRIDGE_DASHBOARD_TOKEN" \
-  --data @codex-analytics-snapshot.json \
-  http://127.0.0.1:3838/app/api/codex-analytics/import
-```
-
-Snapshots are stored at:
+Endpoints shown in the native app:
 
 ```text
-$LOCALBRIDGE_DATA_DIR/codex-analytics-snapshots.jsonl
+GET /workspaces/{workspace_id}/usage
+GET /workspaces/{workspace_id}/code_reviews
+GET /workspaces/{workspace_id}/code_review_responses
 ```
 
-The stored raw snapshot is bounded and redacted for keys such as tokens, cookies,
-authorization headers, email, prompt, response, and content.
+The API supports day or week buckets, paginated results, and reporting windows
+up to 90 days. The usage endpoint can return workspace-wide rows with
+`group=workspace` or per-user rows when `group` is omitted.
 
-## Enterprise API Sync
+## Native App Panel
 
-If your workspace has Codex Enterprise analytics access, use the sync helper.
-Keep the API key in the shell environment, not in the repository.
+Open:
+
+```text
+Usage 分析 -> Codex Analytics API
+```
+
+The panel shows:
+
+- official base URL
+- required scope
+- workspace ID
+- API key environment variable name
+- `group_by`
+- usage `group`
+- copyable endpoint list
+- copyable sync command
+
+Secrets are not stored in the app. Put the real API key in your shell, launchd
+environment, or secrets manager under the env name configured in the panel.
+
+## Optional Snapshot Sync
+
+The helper fetches official analytics data and writes a local JSON snapshot:
 
 ```bash
 CODEX_ANALYTICS_API_KEY=... \
 CODEX_WORKSPACE_ID=... \
-LOCALBRIDGE_URL=http://127.0.0.1:3838 \
-LOCALBRIDGE_DASHBOARD_TOKEN=... \
 node scripts/sync-codex-analytics.mjs
 ```
 
 Useful options:
 
 ```bash
+CODEX_ANALYTICS_API_KEY_ENV=CODEX_ANALYTICS_API_KEY
 START_TIME=1765152000
 END_TIME=1765756800
 GROUP_BY=day
@@ -142,33 +75,5 @@ ENDPOINTS=usage,code_reviews,code_review_responses
 OUT=codex-analytics-snapshot.json
 ```
 
-The helper currently calls:
-
-- `/v1/analytics/codex/workspaces/{workspace_id}/usage`
-- `/v1/analytics/codex/workspaces/{workspace_id}/code_reviews`
-- `/v1/analytics/codex/workspaces/{workspace_id}/code_review_responses`
-
-The API key needs the `codex.enterprise.analytics.read` scope.
-
-## Deep-Mining Ideas
-
-Useful questions once daily snapshots accumulate:
-
-- Which skills are growing fastest week over week?
-- Which categories peak on release days or doc-writing days?
-- How much usage is hidden under `Other`, and which skill labels should be
-  promoted into first-class categories?
-- Which clients or users drive the most turns, threads, or review comments?
-- Do code review reactions correlate with P0/P1/P2 comment volume?
-- Which days have high skill usage but low successful task completion in local
-  bridge traces?
-
-The next useful join is between Codex Analytics and local bridge traces:
-
-```text
-Codex cloud usage by day
-  + local MCP tool calls
-  + audit events
-  + Git/test outcomes
-  -> skill ROI, blocked workflows, and automation candidates
-```
+The snapshot file is local-only by default. Do not commit API outputs that may
+contain user, workspace, or usage details.

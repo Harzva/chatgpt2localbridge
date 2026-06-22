@@ -1,7 +1,6 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { BridgeConfig } from './config.js';
 import { readAuditEvents, readToolCalls } from './activity.js';
-import { importCodexAnalyticsSnapshot, readCodexAnalyticsSummary } from './codexAnalytics.js';
 
 export function handleDashboardRequest(
   req: IncomingMessage,
@@ -45,24 +44,6 @@ export function handleDashboardRequest(
     });
   }
 
-  if (req.method === 'GET' && url.pathname === '/app/api/codex-analytics') {
-    if (!isDashboardAuthorized(req, url, config)) {
-      return sendJson(res, 401, { error: 'Dashboard token required' });
-    }
-    const limit = clamp(Number.parseInt(url.searchParams.get('limit') ?? '80', 10), 1, 300);
-    return sendJson(res, 200, readCodexAnalyticsSummary(config, limit));
-  }
-
-  if (req.method === 'POST' && url.pathname === '/app/api/codex-analytics/import') {
-    if (!isDashboardAuthorized(req, url, config)) {
-      return sendJson(res, 401, { error: 'Dashboard token required' });
-    }
-    readJsonBody(req)
-      .then((payload) => sendJson(res, 200, importCodexAnalyticsSnapshot(config, payload)))
-      .catch((err) => sendJson(res, 400, { error: err instanceof Error ? err.message : String(err) }));
-    return true;
-  }
-
   return false;
 }
 
@@ -95,11 +76,10 @@ function renderDashboardHtml(config: BridgeConfig): string {
     button{height:38px;border:1px solid var(--rail);border-radius:8px;background:var(--rail);color:#fff;font-weight:760;padding:0 13px;cursor:pointer;font:inherit;font-size:13px}button:hover{filter:brightness(1.08)}.secondary{border-color:var(--line);background:#fff;color:var(--ink)}
     .shell{max-width:1240px;margin:0 auto;padding:20px}.status-strip{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}.metric{min-height:96px;border:1px solid var(--line);border-radius:8px;background:rgba(255,255,255,.88);box-shadow:var(--shadow);padding:14px;display:grid;align-content:space-between}
     .metric .label{color:var(--soft);font-size:12px;font-weight:720;text-transform:uppercase;letter-spacing:.04em}.metric .value{font-size:24px;font-weight:820;line-height:1.15;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.metric .note{color:var(--faint);font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-    .layout{display:grid;grid-template-columns:minmax(0,1fr) 360px;gap:14px;margin-top:14px}.analytics-grid{display:grid;grid-template-columns:340px minmax(0,1fr);gap:14px}.card{border:1px solid var(--line);border-radius:8px;background:#fff;box-shadow:var(--shadow);padding:16px}.card h2{font-size:14px;margin:0 0 12px;font-weight:800}.card-head{display:flex;align-items:center;justify-content:space-between;gap:12px}.pill{display:inline-flex;align-items:center;gap:6px;min-height:24px;border:1px solid var(--line);border-radius:999px;background:#f7faf9;padding:2px 9px;color:var(--soft);font-size:12px;font-weight:720}.dot{width:8px;height:8px;border-radius:50%;background:var(--faint)}.dot.ok{background:var(--green)}.dot.warn{background:var(--amber)}.dot.error{background:var(--red)}
+    .layout{display:grid;grid-template-columns:minmax(0,1fr) 360px;gap:14px;margin-top:14px}.card{border:1px solid var(--line);border-radius:8px;background:#fff;box-shadow:var(--shadow);padding:16px}.card h2{font-size:14px;margin:0 0 12px;font-weight:800}.card-head{display:flex;align-items:center;justify-content:space-between;gap:12px}.pill{display:inline-flex;align-items:center;gap:6px;min-height:24px;border:1px solid var(--line);border-radius:999px;background:#f7faf9;padding:2px 9px;color:var(--soft);font-size:12px;font-weight:720}.dot{width:8px;height:8px;border-radius:50%;background:var(--faint)}.dot.ok{background:var(--green)}.dot.warn{background:var(--amber)}.dot.error{background:var(--red)}
     .kv{display:grid;grid-template-columns:136px minmax(0,1fr);gap:9px 12px;font-size:13px}.kv div:nth-child(odd){color:var(--soft);font-weight:700}.path,.mono,code,pre{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}.path,.mono{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.roots{display:grid;gap:8px}.root{border:1px solid var(--line);border-radius:8px;padding:10px 11px;background:#f8fbfa;font-size:12px}
-    textarea{width:100%;min-height:170px;resize:vertical;border:1px solid var(--line);border-radius:8px;padding:10px 11px;font:12px/1.45 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color:var(--ink);background:#fbfcfc}.small-actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:10px}.mini-metrics{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}.mini{border:1px solid var(--line);border-radius:8px;background:#f8fbfa;padding:10px}.mini b{display:block;font-size:20px}.mini span{color:var(--soft);font-size:12px}.bar-list{display:grid;gap:8px;margin-top:12px}.bar-row{display:grid;grid-template-columns:150px minmax(0,1fr) 58px;gap:8px;align-items:center;font-size:12px}.bar-track{height:9px;border-radius:999px;background:#edf2f0;overflow:hidden}.bar-fill{height:100%;background:linear-gradient(90deg,var(--green),var(--blue));border-radius:999px}.insights{display:grid;gap:7px;margin-top:12px}.insight{border-left:3px solid var(--green);background:#f6faf8;padding:8px 10px;font-size:12px;color:#31423e}.muted{color:var(--faint);font-size:12px}
     table{width:100%;border-collapse:separate;border-spacing:0;margin-top:10px;border:1px solid var(--line);border-radius:8px;overflow:hidden;background:#fff}th,td{padding:10px 12px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top;font-size:12px}tr:last-child td{border-bottom:0}th{background:#edf4f1;color:#42524e;font-size:11px;text-transform:uppercase;letter-spacing:.04em}.state-ok{color:var(--green);font-weight:760}.state-error{color:var(--red);font-weight:760}.state-started{color:var(--amber);font-weight:760}pre{white-space:pre-wrap;margin:0;max-height:132px;overflow:auto;color:#2a3835}.empty{padding:22px;border:1px dashed var(--line);border-radius:8px;color:var(--faint);font-size:13px;text-align:center;background:#fbfcfc}.notice{border-left:3px solid var(--blue);padding:10px 12px;background:#f3f8fb;color:#355363;font-size:13px;line-height:1.5}.hidden{display:none!important}
-    @media(max-width:980px){.topbar,.layout,.analytics-grid{grid-template-columns:1fr}.toolbar{justify-content:flex-start}.input{width:100%}.status-strip{grid-template-columns:repeat(2,minmax(0,1fr))}}
+    @media(max-width:980px){.topbar,.layout{grid-template-columns:1fr}.toolbar{justify-content:flex-start}.input{width:100%}.status-strip{grid-template-columns:repeat(2,minmax(0,1fr))}}
     @media(max-width:620px){.shell{padding:14px}.status-strip{grid-template-columns:1fr}.kv{grid-template-columns:1fr}th:nth-child(4),td:nth-child(4){display:none}}
   </style>
 </head>
@@ -135,23 +115,6 @@ function renderDashboardHtml(config: BridgeConfig): string {
         <div class="roots" id="roots"></div>
       </article>
     </section>
-    <section class="analytics-grid" style="margin-top:14px">
-      <article class="card">
-        <div class="card-head"><h2>Codex Analytics Import</h2><span class="pill" id="analytics-import-state">local</span></div>
-        <textarea id="analytics-json" spellcheck="false" placeholder='{"source":"chatgpt-codex-analytics","metric":"skills_used","series":[{"name":"Roadmp Writer","data":[{"date":"2026-06-18","value":65}]}]}'></textarea>
-        <div class="small-actions">
-          <button id="analytics-import">Import JSON</button>
-          <button class="secondary" id="analytics-sample">Sample</button>
-        </div>
-        <p class="muted">Paste a sanitized Codex Analytics JSON snapshot. Raw snapshots are stored locally with sensitive fields redacted.</p>
-      </article>
-      <article class="card">
-        <div class="card-head"><h2>Codex Analytics</h2><span class="pill" id="analytics-pill">0 points</span></div>
-        <div class="mini-metrics" id="analytics-metrics"></div>
-        <div class="bar-list" id="analytics-bars"></div>
-        <div class="insights" id="analytics-insights"></div>
-      </article>
-    </section>
     <section class="card" style="margin-top:14px">
       <div class="card-head"><h2>Tool Calls</h2><span class="pill" id="calls-pill">0 records</span></div>
       <table><thead><tr><th>Time</th><th>Tool</th><th>Status</th><th>Duration</th><th>Summary</th></tr></thead><tbody id="calls"></tbody></table>
@@ -176,19 +139,6 @@ function renderDashboardHtml(config: BridgeConfig): string {
     document.getElementById('save').onclick = () => { localStorage.setItem('localbridge.dashboardToken', tokenInput.value); load(); };
     document.getElementById('clear').onclick = () => { tokenInput.value = ''; localStorage.removeItem('localbridge.dashboardToken'); load(); };
     document.getElementById('refresh').onclick = () => load();
-    document.getElementById('analytics-sample').onclick = () => {
-      document.getElementById('analytics-json').value = JSON.stringify({
-        source: 'chatgpt-codex-analytics-screenshot',
-        metric: 'skills_used',
-        series: [
-          { name: 'Roadmp Writer', data: [{ date: '2026-06-18', value: 65 }] },
-          { name: 'Verification Before Completion', data: [{ date: '2026-06-18', value: 7 }] },
-          { name: 'Harzva Local Knowledge Hub', data: [{ date: '2026-06-18', value: 9 }] },
-          { name: 'Other', data: [{ date: '2026-06-18', value: 107 }] }
-        ]
-      }, null, 2);
-    };
-    document.getElementById('analytics-import').onclick = () => importAnalytics();
     async function api(path) {
       const token = tokenInput.value;
       const res = await fetch(path, { headers: token ? { 'x-localbridge-dashboard-token': token } : {} });
@@ -202,8 +152,6 @@ function renderDashboardHtml(config: BridgeConfig): string {
         const activity = await api('/app/api/activity?limit=120');
         renderCalls(activity.toolCalls || []);
         renderAudit(activity.auditEvents || []);
-        const analytics = await api('/app/api/codex-analytics?limit=80');
-        renderAnalytics(analytics);
       } catch (err) {
         renderError(String(err.message || err));
       }
@@ -245,36 +193,6 @@ function renderDashboardHtml(config: BridgeConfig): string {
       document.getElementById('roots').innerHTML = '<div class="empty">Enter a dashboard token to unlock runtime details.</div>';
       renderCalls([]);
       renderAudit([]);
-      renderAnalytics(null);
-    }
-    async function importAnalytics() {
-      const state = document.getElementById('analytics-import-state');
-      try {
-        const payload = JSON.parse(document.getElementById('analytics-json').value || '{}');
-        const token = tokenInput.value;
-        const res = await fetch('/app/api/codex-analytics/import', {
-          method: 'POST',
-          headers: Object.assign({ 'content-type': 'application/json' }, token ? { 'x-localbridge-dashboard-token': token } : {}),
-          body: JSON.stringify(payload)
-        });
-        const body = await res.json();
-        if (!res.ok) throw new Error(body.error || 'import failed');
-        state.textContent = 'imported';
-        renderAnalytics(body);
-      } catch (err) {
-        state.textContent = 'error';
-        alert(String(err.message || err));
-      }
-    }
-    function renderAnalytics(data) {
-      const empty = !data || !data.pointCount;
-      document.getElementById('analytics-pill').textContent = empty ? '0 points' : data.pointCount + ' points';
-      const totals = empty ? [] : data.totalsByMetric || [];
-      document.getElementById('analytics-metrics').innerHTML = totals.slice(0, 3).map((item) => '<div class="mini"><b>' + esc(item.value) + '</b><span>' + esc(item.metric) + '</span></div>').join('') || '<div class="empty">No analytics imported yet.</div>';
-      const cats = empty ? [] : data.topCategories || [];
-      const max = Math.max(1, ...cats.map((item) => item.value));
-      document.getElementById('analytics-bars').innerHTML = cats.slice(0, 8).map((item) => '<div class="bar-row"><div class="path" title="' + esc(item.category) + '">' + esc(item.category) + '</div><div class="bar-track"><div class="bar-fill" style="width:' + Math.max(2, Math.round((item.value / max) * 100)) + '%"></div></div><div>' + esc(item.value) + '</div></div>').join('');
-      document.getElementById('analytics-insights').innerHTML = (empty ? [] : data.insights || []).slice(0, 4).map((item) => '<div class="insight">' + esc(item) + '</div>').join('');
     }
     function renderCalls(records) {
       document.getElementById('metric-activity').textContent = String(records.length);
@@ -325,26 +243,4 @@ function escapeHtml(value: string): string {
     '"': '&quot;',
     "'": '&#39;',
   }[char] ?? char));
-}
-
-function readJsonBody(req: IncomingMessage): Promise<unknown> {
-  return new Promise((resolve, reject) => {
-    let body = '';
-    req.setEncoding('utf8');
-    req.on('data', (chunk) => {
-      body += chunk;
-      if (body.length > 2_000_000) {
-        reject(new Error('Request body too large'));
-        req.destroy();
-      }
-    });
-    req.on('end', () => {
-      try {
-        resolve(body.trim() ? JSON.parse(body) : {});
-      } catch {
-        reject(new Error('Invalid JSON body'));
-      }
-    });
-    req.on('error', reject);
-  });
 }
