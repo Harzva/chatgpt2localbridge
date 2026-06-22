@@ -4380,41 +4380,90 @@ function compactCodexTask(task: TaskRecord): TaskRecord {
     startedAt: task.startedAt,
     completedAt: task.completedAt,
     changedFiles: task.changedFiles?.slice(0, 80),
-    testResult: task.testResult,
+    testResult: task.testResult ? truncate(task.testResult, 1800) : undefined,
   };
 }
 
 function refreshCodexTaskResult(task: TaskRecord): TaskRecord {
   if (!task.projectPath) return task;
-  const hasGit = isGitWorkTree(task.projectPath);
-  const changedFiles = hasGit ? getChangedFiles(task.projectPath).map((file) => ({
-    path: file.path,
-    oldPath: file.oldPath,
-    status: file.status,
-    insertions: file.insertions,
-    deletions: file.deletions,
-  })) : [];
-  const diffPreview = hasGit ? truncate(getRawDiff(task.projectPath), 60_000) : '';
+  const gitScope = resolveGitScope(task.projectPath);
+  const changedFiles = gitScope ? getScopedChangedFiles(gitScope, task.projectPath) : [];
+  const diffPreview = gitScope ? truncate(getScopedRawDiff(gitScope), 60_000) : '';
   const lastMessage = task.resultFile && fs.existsSync(task.resultFile)
     ? truncate(fs.readFileSync(task.resultFile, 'utf-8'), 20_000)
     : '';
+  const extractedResult = extractTestResult(lastMessage || (task.logFile ? readTextTail(task.logFile, 20_000) : ''));
   return {
     ...task,
     changedFiles,
     diffPreview,
-    testResult: extractTestResult(lastMessage || (task.logFile ? readTextTail(task.logFile, 20_000) : '')) || task.testResult || 'No test result captured yet.',
+    testResult: truncate(extractedResult || task.testResult || 'No test result captured yet.', 1800),
   };
 }
 
-function isGitWorkTree(projectPath: string): boolean {
+function resolveGitScope(projectPath: string): { gitRoot: string; pathspec: string } | undefined {
   try {
-    execFileSync('git', ['rev-parse', '--is-inside-work-tree'], {
+    const gitRoot = execFileSync('git', ['rev-parse', '--show-toplevel'], {
       cwd: projectPath,
+      encoding: 'utf-8',
+    }).trim();
+    const pathspec = path.relative(gitRoot, projectPath) || '.';
+    return { gitRoot, pathspec };
+  } catch {
+    return undefined;
+  }
+}
+
+function getScopedRawDiff(scope: { gitRoot: string; pathspec: string }): string {
+  try {
+    return execFileSync('git', ['diff', 'HEAD', '--', scope.pathspec], {
+      cwd: scope.gitRoot,
+      encoding: 'utf-8',
+      maxBuffer: 50 * 1024 * 1024,
+    });
+  } catch {
+    return '';
+  }
+}
+
+function getScopedChangedFiles(scope: { gitRoot: string; pathspec: string }, projectPath: string): TaskRecord['changedFiles'] {
+  try {
+    const output = execFileSync('git', ['diff', '--numstat', 'HEAD', '--', scope.pathspec], {
+      cwd: scope.gitRoot,
+      encoding: 'utf-8',
+    }).trim();
+    if (!output) return [];
+    return output.split('\n').flatMap((line) => {
+      const parts = line.split('\t');
+      if (parts.length < 3) return [];
+      const rawPath = parts.slice(2).join('\t');
+      const displayPath = scope.pathspec === '.'
+        ? rawPath
+        : path.relative(scope.pathspec, rawPath);
+      if (displayPath.startsWith('..') || path.isAbsolute(displayPath)) return [];
+      const insertions = parts[0] === '-' ? 0 : Number.parseInt(parts[0], 10);
+      const deletions = parts[1] === '-' ? 0 : Number.parseInt(parts[1], 10);
+      return [{
+        path: displayPath,
+        status: detectScopedFileStatus(scope.gitRoot, rawPath, path.join(projectPath, displayPath)),
+        insertions: Number.isFinite(insertions) ? insertions : 0,
+        deletions: Number.isFinite(deletions) ? deletions : 0,
+      }];
+    });
+  } catch {
+    return [];
+  }
+}
+
+function detectScopedFileStatus(gitRoot: string, gitPath: string, absolutePath: string): string {
+  try {
+    execFileSync('git', ['cat-file', '-e', `HEAD:${gitPath}`], {
+      cwd: gitRoot,
       stdio: 'ignore',
     });
-    return true;
+    return fs.existsSync(absolutePath) ? 'modified' : 'deleted';
   } catch {
-    return false;
+    return fs.existsSync(absolutePath) ? 'added' : 'modified';
   }
 }
 
@@ -4448,8 +4497,56 @@ function readTextTail(file: string, maxBytes: number): string {
 
 function extractTestResult(text: string): string {
   const lines = text.split(/\r?\n/).filter(Boolean);
-  const matches = lines.filter((line) => /test|passed|failed|ok|exit|error/i.test(line)).slice(-12);
-  return matches.join('\n');
+  const matches: string[] = [];
+  for (const line of lines) {
+    const extracted = extractResultLine(line);
+    if (extracted) matches.push(extracted);
+  }
+  return matches.slice(-12).join('\n');
+}
+
+function extractResultLine(line: string): string | undefined {
+  if (line.length > 4000 && !line.includes('"type":"error"') && !line.includes('"event":"runner.error"')) {
+    return undefined;
+  }
+  try {
+    const parsed = JSON.parse(line) as Record<string, unknown>;
+    if (parsed.event === 'runner.start') return undefined;
+    if (parsed.event === 'runner.error' && typeof parsed.error === 'string') {
+      return truncate(`runner.error: ${sanitizeResultMessage(parsed.error)}`, 1200);
+    }
+    if (parsed.event === 'runner.close') {
+      return truncate(`runner.close: code=${String(parsed.code ?? '-')} signal=${String(parsed.signal ?? '-')} status=${String(parsed.status ?? '-')}`, 400);
+    }
+    if (parsed.type === 'error' && typeof parsed.message === 'string') {
+      return truncate(`codex.error: ${sanitizeResultMessage(parsed.message)}`, 1200);
+    }
+    if (parsed.type === 'item.completed') {
+      const item = parsed.item as Record<string, unknown> | undefined;
+      if (item?.type === 'error' && typeof item.message === 'string') {
+        return truncate(`codex.error: ${sanitizeResultMessage(item.message)}`, 1200);
+      }
+    }
+  } catch {
+    // Fall through to conservative plain-text extraction.
+  }
+  if (/runner\.start|--dangerously-bypass-approvals-and-sandbox|--output-last-message|^Reading additional input/i.test(line)) {
+    return undefined;
+  }
+  if (/remote_installed_plugin_sync|chatgpt\.com\/backend-api\/ps\/plugins\/installed|Too many requests to DB/i.test(line)) {
+    return 'codex.warning: remote plugin sync failed with ChatGPT service 503; retry later or continue without remote plugin sync.';
+  }
+  if (/test|passed|failed|ok|exit|error|timeout|timed out|reconnecting|fallback/i.test(line)) {
+    return truncate(sanitizeResultMessage(line), 1200);
+  }
+  return undefined;
+}
+
+function sanitizeResultMessage(value: string): string {
+  return value
+    .replaceAll(os.homedir(), '~')
+    .replace(/\/Users\/[^/\s"'`]+/g, '~')
+    .replace(/\/Volumes\/[^/\s"'`]+\/[^\s"'`]+\/[^\s"'`]+/g, '<workspace>');
 }
 
 function shellQuote(value: string): string {
