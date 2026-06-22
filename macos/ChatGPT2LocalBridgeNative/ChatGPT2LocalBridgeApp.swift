@@ -882,7 +882,7 @@ struct ConnectorWizardView: View {
         VStack(alignment: .leading, spacing: 16) {
             HStack(alignment: .top, spacing: 16) {
                 ConnectorMachineList(routeToAdd: $routeToAdd)
-                    .frame(width: 270)
+                    .frame(width: 350)
                 ConnectorMachineEditor()
             }
 
@@ -935,9 +935,6 @@ struct ConnectorMachineList: View {
                         machine: machine,
                         isSelected: machine.id == model.selectedConnectorMachineID
                     )
-                    .onTapGesture {
-                        model.selectConnectorMachine(machine.id)
-                    }
                 }
             }
 
@@ -952,28 +949,75 @@ struct ConnectorMachineList: View {
 }
 
 struct ConnectorMachineRow: View {
+    @EnvironmentObject private var model: BridgeModel
     let machine: ConnectorMachineProfile
     let isSelected: Bool
 
     var body: some View {
-        HStack(spacing: 10) {
-            Image(systemName: machine.route.symbol)
-                .foregroundStyle(machine.route.tint)
-                .frame(width: 20)
-            VStack(alignment: .leading, spacing: 3) {
-                Text(machine.name)
-                    .font(.system(size: 12, weight: .bold))
-                    .lineLimit(1)
-                Text(machine.connectorBaseLabel)
-                    .font(.system(size: 10, design: .monospaced))
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
+        HStack(alignment: .top, spacing: 10) {
+            Button {
+                model.selectConnectorMachine(machine.id)
+            } label: {
+                HStack(alignment: .top, spacing: 10) {
+                    Image(systemName: machine.route.symbol)
+                        .foregroundStyle(machine.route.tint)
+                        .frame(width: 20)
+                        .padding(.top, 2)
+                    VStack(alignment: .leading, spacing: 5) {
+                        Text(machine.name)
+                            .font(.system(size: 12, weight: .bold))
+                            .foregroundStyle(.primary)
+                            .lineLimit(nil)
+                            .multilineTextAlignment(.leading)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .lineSpacing(1)
+                        Text(machine.connectorBaseLabel)
+                            .font(.system(size: 10, design: .monospaced))
+                            .foregroundStyle(.secondary)
+                            .lineLimit(2)
+                            .truncationMode(.middle)
+                            .multilineTextAlignment(.leading)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    Spacer(minLength: 0)
+                }
             }
-            Spacer(minLength: 0)
-            ToolBadge(text: machine.authMode.shortLabel, tint: machine.authMode.tint)
+            .buttonStyle(.plain)
+            .help("Edit \(machine.name)")
+
+            VStack(alignment: .trailing, spacing: 7) {
+                ToolBadge(text: machine.authMode.shortLabel, tint: machine.authMode.tint)
+                HStack(spacing: 4) {
+                    Button {
+                        model.selectConnectorMachine(machine.id)
+                    } label: {
+                        Image(systemName: "pencil")
+                    }
+                    .buttonStyle(.borderless)
+                    .help("Edit")
+
+                    Button {
+                        model.copyConnectorURL(machineID: machine.id)
+                    } label: {
+                        Image(systemName: "link")
+                    }
+                    .buttonStyle(.borderless)
+                    .help("Copy URL")
+
+                    Button(role: .destructive) {
+                        model.deleteConnectorMachine(machine.id)
+                    } label: {
+                        Image(systemName: "trash")
+                    }
+                    .buttonStyle(.borderless)
+                    .disabled(model.connectorMachines.count <= 1)
+                    .help("Delete")
+                }
+                .font(.system(size: 11, weight: .semibold))
+            }
         }
         .padding(10)
+        .frame(minHeight: 76)
         .background(isSelected ? Color.accentColor.opacity(0.13) : Color(nsColor: .controlBackgroundColor))
         .overlay(
             RoundedRectangle(cornerRadius: 8, style: .continuous)
@@ -4628,14 +4672,30 @@ final class BridgeModel: ObservableObject {
     }
 
     func deleteSelectedConnectorMachine() {
-        guard let index = selectedConnectorMachineIndex, connectorMachines.count > 1 else { return }
+        guard let selectedID = selectedConnectorMachine?.id else { return }
+        deleteConnectorMachine(selectedID)
+    }
+
+    func deleteConnectorMachine(_ id: String) {
+        guard let index = connectorMachines.firstIndex(where: { $0.id == id }),
+              connectorMachines.count > 1 else { return }
         connectorMachines.remove(at: index)
-        selectedConnectorMachineID = connectorMachines.first?.id ?? ""
+        if selectedConnectorMachineID == id {
+            let nextIndex = min(index, connectorMachines.count - 1)
+            selectedConnectorMachineID = connectorMachines.indices.contains(nextIndex)
+                ? connectorMachines[nextIndex].id
+                : (connectorMachines.first?.id ?? "")
+        }
         saveConnectorMachines()
     }
 
     func copySelectedConnectorURL() {
         guard let machine = selectedConnectorMachine else { return }
+        copyConnectorURL(machineID: machine.id)
+    }
+
+    func copyConnectorURL(machineID: String) {
+        guard let machine = connectorMachines.first(where: { $0.id == machineID }) else { return }
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(connectorURL(for: machine), forType: .string)
     }
