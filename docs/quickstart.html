@@ -13,11 +13,12 @@
   </nav>
   <main class="section">
     <h1>Quickstart</h1>
-    <p class="lede">The shortest path is clone or npx, initialize a local policy, run the HTTP MCP server, then create a ChatGPT Custom Connector.</p>
-    <h2>Option A: npx from GitHub</h2>
-    <pre class="code"><code>npx github:harzva/chatgpt2localbridge init --root ~/Projects
+    <p class="lede">The shortest path is GitHub npx, initialize a local policy, run the HTTP MCP server, then create a ChatGPT Custom Connector.</p>
+    <h2>Option A: temporary GitHub npx install</h2>
+    <p>No clone is required for this path.</p>
+    <pre class="code"><code>npx github:Harzva/chatgpt2localbridge init --root ~/Projects
 set -a; source .env.local; set +a
-npx github:harzva/chatgpt2localbridge --http 3838</code></pre>
+npx github:Harzva/chatgpt2localbridge --http 3838</code></pre>
     <h2>Option B: clone and run</h2>
     <pre class="code"><code>git clone https://github.com/harzva/chatgpt2localbridge.git
 cd chatgpt2localbridge

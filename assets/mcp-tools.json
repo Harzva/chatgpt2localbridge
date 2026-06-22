@@ -1,7 +1,7 @@
 {
-  "generatedAt": "2026-06-21T14:43:12.000Z",
+  "generatedAt": "2026-06-22T04:41:31.149Z",
   "source": "MCP tools/list",
-  "count": 64,
+  "count": 69,
   "tools": [
     {
       "name": "bridge_health",
@@ -297,6 +297,109 @@
       }
     },
     {
+      "name": "codex_result",
+      "title": "Codex Runner Result",
+      "description": "ChatGPT-compatible alias for codex.result. Return a compact task summary by default; set includeLog/includeDiff only when needed.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "taskId": {
+            "type": "string"
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 20,
+            "default": 5
+          },
+          "includeLog": {
+            "type": "boolean",
+            "default": false
+          },
+          "includeDiff": {
+            "type": "boolean",
+            "default": false
+          }
+        },
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "codex_status",
+      "title": "Codex Runner Status",
+      "description": "ChatGPT-compatible alias for codex.status. Read one Codex Runner task or list recent task records.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "taskId": {
+            "type": "string"
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 20
+          }
+        },
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "codex_task_start",
+      "title": "Start Codex Runner Task",
+      "description": "ChatGPT-compatible alias for codex.task_start. Start a local Codex Runner job from a handoffId or scoped project task. Prefer this over shell tools.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "handoffId": {
+            "type": "string"
+          },
+          "task": {
+            "type": "string"
+          },
+          "workspace": {
+            "type": "string"
+          },
+          "projectPath": {
+            "type": "string"
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "normal",
+              "debug"
+            ],
+            "default": "normal"
+          },
+          "timeoutMs": {
+            "type": "integer",
+            "minimum": 1000,
+            "maximum": 600000,
+            "default": 120000
+          }
+        },
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "openWorldHint": false
+      }
+    },
+    {
       "name": "codex.cancel",
       "title": "Cancel Codex Runner Task",
       "description": "Cancel a running Codex Runner task by task id.",
@@ -326,7 +429,7 @@
     {
       "name": "codex.result",
       "title": "Codex Runner Result",
-      "description": "Return the current task result envelope for the native Codex Runner view. This is a stable high-level result shape; full CLI diff/test attachment lands in the next runner phase.",
+      "description": "Return a compact Codex Runner result summary. Full log and diff are opt-in to reduce hosted ChatGPT safety-check blocks.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -338,6 +441,14 @@
             "minimum": 1,
             "maximum": 20,
             "default": 5
+          },
+          "includeLog": {
+            "type": "boolean",
+            "default": false
+          },
+          "includeDiff": {
+            "type": "boolean",
+            "default": false
           }
         },
         "additionalProperties": false,
@@ -380,6 +491,9 @@
       "inputSchema": {
         "type": "object",
         "properties": {
+          "handoffId": {
+            "type": "string"
+          },
           "task": {
             "type": "string"
           },
@@ -404,9 +518,6 @@
             "default": 120000
           }
         },
-        "required": [
-          "task"
-        ],
         "additionalProperties": false,
         "$schema": "http://json-schema.org/draft-07/schema#"
       },
@@ -932,6 +1043,269 @@
       },
       "annotations": {
         "readOnlyHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "handoff_create",
+      "title": "Create Codex Handoff",
+      "description": "ChatGPT-compatible alias for handoff.create. Create a structured handoff package for local Codex Runner. This does not run code; call codex_task_start with the returned handoffId.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 160
+          },
+          "objective": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 12000
+          },
+          "workspace": {
+            "type": "string"
+          },
+          "projectPath": {
+            "type": "string"
+          },
+          "constraints": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "minItems": 1,
+            "maxItems": 20
+          },
+          "allowedOperations": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "read",
+                "write",
+                "run_tests",
+                "inspect_git",
+                "create_artifact",
+                "use_skill_context"
+              ]
+            },
+            "minItems": 1,
+            "maxItems": 12
+          },
+          "testCommands": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 10,
+            "default": []
+          },
+          "expectedArtifacts": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 30,
+            "default": []
+          },
+          "riskLevel": {
+            "type": "string",
+            "enum": [
+              "low",
+              "medium",
+              "high"
+            ],
+            "default": "medium"
+          },
+          "acceptanceCriteria": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 20,
+            "default": []
+          },
+          "skillContext": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 20,
+            "default": []
+          },
+          "skillTask": {
+            "type": "string",
+            "maxLength": 4000
+          },
+          "skillRoot": {
+            "type": "string"
+          },
+          "maxSkillContext": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 10,
+            "default": 3
+          },
+          "notes": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 4000
+              },
+              {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 20
+              }
+            ]
+          }
+        },
+        "required": [
+          "title",
+          "objective",
+          "constraints",
+          "allowedOperations"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "handoff.create",
+      "title": "Create Codex Handoff",
+      "description": "Validate and persist a structured handoff package for local Codex Runner. This does not execute code; call codex.task_start with the returned handoffId to run it.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 160
+          },
+          "objective": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 12000
+          },
+          "workspace": {
+            "type": "string"
+          },
+          "projectPath": {
+            "type": "string"
+          },
+          "constraints": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "minItems": 1,
+            "maxItems": 20
+          },
+          "allowedOperations": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "read",
+                "write",
+                "run_tests",
+                "inspect_git",
+                "create_artifact",
+                "use_skill_context"
+              ]
+            },
+            "minItems": 1,
+            "maxItems": 12
+          },
+          "testCommands": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 10,
+            "default": []
+          },
+          "expectedArtifacts": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 30,
+            "default": []
+          },
+          "riskLevel": {
+            "type": "string",
+            "enum": [
+              "low",
+              "medium",
+              "high"
+            ],
+            "default": "medium"
+          },
+          "acceptanceCriteria": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 20,
+            "default": []
+          },
+          "skillContext": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 20,
+            "default": []
+          },
+          "skillTask": {
+            "type": "string",
+            "maxLength": 4000
+          },
+          "skillRoot": {
+            "type": "string"
+          },
+          "maxSkillContext": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 10,
+            "default": 3
+          },
+          "notes": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 4000
+              },
+              {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 20
+              }
+            ]
+          }
+        },
+        "required": [
+          "title",
+          "objective",
+          "constraints",
+          "allowedOperations"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "annotations": {
+        "readOnlyHint": false,
         "openWorldHint": false
       }
     },
@@ -1607,6 +1981,10 @@
           "includeReferences": {
             "type": "boolean",
             "default": true
+          },
+          "activationId": {
+            "type": "string",
+            "description": "Required to include referenced files. Use the activationId returned by skill.read."
           },
           "maxReferenceFiles": {
             "type": "integer",

@@ -41,6 +41,19 @@ export interface BridgeConfig {
   policy: BridgePolicy;
   /** Controls which MCP tools are exposed to hosted clients */
   toolProfile: BridgeToolProfile;
+  /** Optional provider settings for Codex Runner */
+  codexProvider: CodexProviderConfig;
+}
+
+export type CodexProviderKind = 'official' | 'openai-compatible' | 'sub2api';
+
+export interface CodexProviderConfig {
+  kind: CodexProviderKind;
+  profile?: string;
+  codexHome?: string;
+  model?: string;
+  baseUrl?: string;
+  apiKeyEnv: string;
 }
 
 export function loadConfig(): BridgeConfig {
@@ -71,6 +84,7 @@ export function loadConfig(): BridgeConfig {
   const policyPath = resolvePolicyPath(env('POLICY_PATH'));
   const policy = loadPolicy(policyPath);
   const toolProfile = parseToolProfile(env('TOOL_PROFILE'));
+  const codexProvider = loadCodexProvider();
 
   return {
     dataDir,
@@ -82,6 +96,7 @@ export function loadConfig(): BridgeConfig {
     policyPath,
     policy,
     toolProfile,
+    codexProvider,
   };
 }
 
@@ -98,9 +113,15 @@ function parsePositiveInt(value: string | undefined, fallback: number): number {
 function parseToolProfile(value: string | undefined): BridgeToolProfile {
   const normalized = (value ?? 'normal').trim().toLowerCase();
   switch (normalized) {
+    case 'full':
     case 'debug':
     case 'all':
       return 'debug';
+    case 'minimal':
+    case 'public':
+    case 'connector':
+    case 'connector-minimal':
+      return 'chatgpt-app';
     case 'codex':
     case 'codex-runner':
     case 'codex-runner-only':
@@ -110,10 +131,29 @@ function parseToolProfile(value: string | undefined): BridgeToolProfile {
     case 'chatgpt-app':
     case 'app':
       return 'chatgpt-app';
+    case 'standard':
     case 'normal':
     default:
       return 'normal';
   }
+}
+
+function loadCodexProvider(): CodexProviderConfig {
+  const rawKind = (env('CODEX_PROVIDER') ?? 'official').trim().toLowerCase();
+  const kind: CodexProviderKind = rawKind === 'sub2api'
+    ? 'sub2api'
+    : rawKind === 'openai-compatible' || rawKind === 'openai_compatible' || rawKind === 'compatible'
+      ? 'openai-compatible'
+      : 'official';
+  const apiKeyEnv = env('CODEX_API_KEY_ENV')?.trim() || 'OPENAI_API_KEY';
+  return {
+    kind,
+    profile: env('CODEX_PROFILE') || undefined,
+    codexHome: env('CODEX_HOME') ? path.resolve(expandHome(env('CODEX_HOME') ?? '')) : undefined,
+    model: env('CODEX_MODEL') || undefined,
+    baseUrl: env('CODEX_BASE_URL') || env('OPENAI_BASE_URL') || undefined,
+    apiKeyEnv,
+  };
 }
 
 function expandHome(value: string): string {

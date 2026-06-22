@@ -6,7 +6,7 @@ import path from 'node:path';
 import os from 'node:os';
 import { execFileSync, exec, spawn } from 'node:child_process';
 import { promisify } from 'node:util';
-import { createHash } from 'node:crypto';
+import { createHash, randomBytes } from 'node:crypto';
 import type { BridgeConfig, BridgePolicy } from './config.js';
 import { snapshotProject } from './project.js';
 import { getRawDiff, getChangedFiles, parseUnifiedDiff } from './diffEngine.js';
@@ -26,6 +26,7 @@ const MAX_OUTPUT_BYTES = 200_000;
 const MAX_SKILL_FILE_BYTES = 512 * 1024;
 const BRIDGE_VERSION = '0.1.1';
 const TRACE_SESSION_FILE = 'trace-session.json';
+const SKILL_ACTIVATION_FILE = 'skill-activations.json';
 const BRIDGE_SERVICE_LABELS = [
   'com.chatgpt2localbridge.bridge',
   'com.chatgpt2localbridge.ngrok',
@@ -54,6 +55,17 @@ interface TraceSessionRecord {
 
 const taskStatuses = ['active', 'running', 'success', 'failed', 'cancelled', 'done', 'blocked'] as const;
 type TaskStatus = typeof taskStatuses[number];
+const handoffRiskLevels = ['low', 'medium', 'high'] as const;
+type HandoffRiskLevel = typeof handoffRiskLevels[number];
+const handoffAllowedOperations = [
+  'read',
+  'write',
+  'run_tests',
+  'inspect_git',
+  'create_artifact',
+  'use_skill_context',
+] as const;
+type HandoffAllowedOperation = typeof handoffAllowedOperations[number];
 
 interface WorkspaceRecord {
   name: string;
@@ -78,6 +90,9 @@ interface TaskRecord {
   pid?: number;
   logFile?: string;
   resultFile?: string;
+  handoffId?: string;
+  handoffFile?: string;
+  handoff?: HandoffPackage;
   exitCode?: number;
   signal?: string;
   startedAt?: string;
@@ -85,6 +100,62 @@ interface TaskRecord {
   changedFiles?: Array<{ path: string; oldPath?: string; status: string; insertions: number; deletions: number }>;
   diffPreview?: string;
   testResult?: string;
+}
+
+interface HandoffPackage {
+  version: '1';
+  id: string;
+  title: string;
+  objective: string;
+  projectPath: string;
+  workspace?: string;
+  constraints: string[];
+  allowedOperations: HandoffAllowedOperation[];
+  testCommands: string[];
+  expectedArtifacts: string[];
+  riskLevel: HandoffRiskLevel;
+  acceptanceCriteria: string[];
+  skillContext: string[];
+  skillActivations?: HandoffSkillActivation[];
+  notes?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+interface HandoffSkillActivation {
+  id: string;
+  name: string;
+  root: string;
+  skillFile: string;
+  activated: boolean;
+  reason: string;
+}
+
+interface HandoffCreateInput {
+  title: string;
+  objective: string;
+  workspace?: string;
+  projectPath?: string;
+  constraints: string[];
+  allowedOperations: HandoffAllowedOperation[];
+  testCommands?: string[];
+  expectedArtifacts?: string[];
+  riskLevel?: HandoffRiskLevel;
+  acceptanceCriteria?: string[];
+  skillContext?: string[];
+  skillTask?: string;
+  skillRoot?: string;
+  maxSkillContext?: number;
+  notes?: string | string[];
+}
+
+interface ActivatedSkillRecord {
+  id: string;
+  root: string;
+  directory: string;
+  skillFile: string;
+  activationId: string;
+  activatedAt: string;
 }
 
 interface ProcessRecord {
@@ -169,6 +240,17 @@ const healthCheckOutput = {
   error: z.string().optional(),
 };
 
+const codexProviderOutput = {
+  kind: z.enum(['official', 'openai-compatible', 'sub2api']),
+  profile: z.string().optional(),
+  codexHome: z.string().optional(),
+  model: z.string().optional(),
+  baseUrlHost: z.string().optional(),
+  codexBin: z.string().optional(),
+  apiKeyEnv: z.string(),
+  apiKeyConfigured: z.boolean(),
+};
+
 const requestContextOutput = {
   source: z.string(),
   transportSessionId: z.string().optional(),
@@ -206,6 +288,33 @@ const workspaceOutput = {
   isDefault: z.boolean().optional(),
 };
 
+const handoffOutput = {
+  version: z.literal('1'),
+  id: z.string(),
+  title: z.string(),
+  objective: z.string(),
+  projectPath: z.string(),
+  workspace: z.string().optional(),
+  constraints: z.array(z.string()),
+  allowedOperations: z.array(z.enum(handoffAllowedOperations)),
+  testCommands: z.array(z.string()),
+  expectedArtifacts: z.array(z.string()),
+  riskLevel: z.enum(handoffRiskLevels),
+  acceptanceCriteria: z.array(z.string()),
+  skillContext: z.array(z.string()),
+  skillActivations: z.array(z.object({
+    id: z.string(),
+    name: z.string(),
+    root: z.string(),
+    skillFile: z.string(),
+    activated: z.boolean(),
+    reason: z.string(),
+  })).optional(),
+  notes: z.string().optional(),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+};
+
 const taskOutput = {
   id: z.string(),
   title: z.string(),
@@ -221,6 +330,9 @@ const taskOutput = {
   pid: z.number().optional(),
   logFile: z.string().optional(),
   resultFile: z.string().optional(),
+  handoffId: z.string().optional(),
+  handoffFile: z.string().optional(),
+  handoff: z.object(handoffOutput).optional(),
   exitCode: z.number().optional(),
   signal: z.string().optional(),
   startedAt: z.string().optional(),
@@ -307,6 +419,8 @@ const skillOutput = {
   path: z.string(),
   directory: z.string(),
   skillFile: z.string(),
+  activated: z.boolean().optional(),
+  source: z.enum(['policy', 'project', 'fallback']).optional(),
 };
 
 const skillBundleFileOutput = {
@@ -642,11 +756,11 @@ export function createMcpServer(config: BridgeConfig): McpServer {
     },
     annotations: { readOnlyHint: true, openWorldHint: false },
   }, withToolLogging('skill.list', async ({ skillRoot, maxResults }) => {
-    const root = resolveSkillRoot(skillRoot);
-    const result = listLocalSkills(root, maxResults);
+    const roots = resolveSkillRootsForQuery(skillRoot);
+    const result = listLocalSkillsAcrossRoots(roots, maxResults);
     return {
       content: [{ type: 'text' as const, text: formatSkillList(result.skills, result.truncated) }],
-      structuredContent: { skillRoot: root, skills: result.skills, truncated: result.truncated },
+      structuredContent: { skillRoot: skillRoot ? roots[0] : 'all', roots, skills: result.skills, truncated: result.truncated },
     };
   }));
 
@@ -668,11 +782,11 @@ export function createMcpServer(config: BridgeConfig): McpServer {
     },
     annotations: { readOnlyHint: true, openWorldHint: false },
   }, withToolLogging('skill.search', async ({ query, skillRoot, maxResults }) => {
-    const root = resolveSkillRoot(skillRoot);
-    const skills = searchLocalSkills(root, query, maxResults);
+    const roots = resolveSkillRootsForQuery(skillRoot);
+    const skills = searchLocalSkillsAcrossRoots(roots, query, maxResults);
     return {
       content: [{ type: 'text' as const, text: skills.length ? skills.map((skill) => `${skill.id}: ${skill.description ?? skill.path}`).join('\n') : `No local skills matched "${query}".` }],
-      structuredContent: { query, skillRoot: root, skills },
+      structuredContent: { query, skillRoot: skillRoot ? roots[0] : 'all', roots, skills },
     };
   }));
 
@@ -686,18 +800,19 @@ export function createMcpServer(config: BridgeConfig): McpServer {
     },
     outputSchema: {
       skill: z.object(skillOutput),
+      activationId: z.string(),
       content: z.string(),
       truncated: z.boolean(),
     },
     annotations: { readOnlyHint: true, openWorldHint: false },
   }, withToolLogging('skill.read', async ({ skill, skillRoot, maxBytes }) => {
-    const root = resolveSkillRoot(skillRoot);
-    const record = findLocalSkill(root, skill);
+    const { root, record } = findLocalSkillAcrossRoots(resolveSkillRootsForQuery(skillRoot), skill);
     const read = readSkillFile(root, record.skillFile, maxBytes);
+    const activation = markSkillActivated(root, record);
     auditEvent('skill.read', { skill: record.id, root, file: record.skillFile, truncated: read.truncated });
     return {
       content: [{ type: 'text' as const, text: read.content }],
-      structuredContent: { skill: record, content: read.content, truncated: read.truncated },
+      structuredContent: { skill: { ...record, activated: true }, activationId: activation.activationId, content: read.content, truncated: read.truncated },
     };
   }));
 
@@ -708,6 +823,7 @@ export function createMcpServer(config: BridgeConfig): McpServer {
       skill: z.string().min(1),
       skillRoot: z.string().optional(),
       includeReferences: z.boolean().default(true),
+      activationId: z.string().optional().describe('Required to include referenced files. Use the activationId returned by skill.read.'),
       maxReferenceFiles: z.number().int().min(0).max(40).default(12),
       maxBytes: z.number().int().min(1000).max(2 * 1024 * 1024).default(250_000),
     },
@@ -718,10 +834,9 @@ export function createMcpServer(config: BridgeConfig): McpServer {
       notes: z.array(z.string()),
     },
     annotations: { readOnlyHint: true, openWorldHint: false },
-  }, withToolLogging('skill.bundle', async ({ skill, skillRoot, includeReferences, maxReferenceFiles, maxBytes }) => {
-    const root = resolveSkillRoot(skillRoot);
-    const record = findLocalSkill(root, skill);
-    const bundle = bundleLocalSkill(root, record, includeReferences, maxReferenceFiles, maxBytes);
+  }, withToolLogging('skill.bundle', async ({ skill, skillRoot, includeReferences, activationId, maxReferenceFiles, maxBytes }) => {
+    const { root, record } = findLocalSkillAcrossRoots(resolveSkillRootsForQuery(skillRoot), skill);
+    const bundle = bundleLocalSkill(root, record, includeReferences, activationId, maxReferenceFiles, maxBytes);
     auditEvent('skill.bundle', { skill: record.id, root, files: bundle.files.map((file) => file.path), truncated: bundle.truncated });
     return {
       content: [{ type: 'text' as const, text: formatSkillBundle(record, bundle.files, bundle.notes, bundle.truncated) }],
@@ -738,7 +853,7 @@ export function createMcpServer(config: BridgeConfig): McpServer {
       maxResults: z.number().int().min(1).max(10).default(5),
     },
     outputSchema: {
-      task: z.string(),
+      task: z.string().optional(),
       skillRoot: z.string(),
       recommendations: z.array(z.object(skillOutput).extend({
         score: z.number(),
@@ -748,15 +863,15 @@ export function createMcpServer(config: BridgeConfig): McpServer {
     },
     annotations: { readOnlyHint: true, openWorldHint: false },
   }, withToolLogging('skill.route', async ({ task, skillRoot, maxResults }) => {
-    const root = resolveSkillRoot(skillRoot);
-    const recommendations = routeLocalSkills(root, task, maxResults);
+    const roots = resolveSkillRootsForQuery(skillRoot);
+    const recommendations = routeLocalSkillsAcrossRoots(roots, task, maxResults);
     const prompt = recommendations.length
-      ? `请先使用 skill.bundle 读取这些本地技能，再继续任务：${recommendations.map((skill) => skill.id).join(', ')}。`
+      ? `请先使用 skill.read 激活这些本地技能；需要引用文件时再用 skill.bundle：${recommendations.map((skill) => skill.id).join(', ')}。`
       : '没有找到明显匹配的本地技能；可以先使用 skill.search 换关键词检索。';
-    auditEvent('skill.route', { task: truncate(task, 500), root, skills: recommendations.map((skill) => skill.id) });
+    auditEvent('skill.route', { task: truncate(task, 500), roots, skills: recommendations.map((skill) => skill.id) });
     return {
       content: [{ type: 'text' as const, text: `${prompt}\n${recommendations.map((skill) => `- ${skill.id}: ${skill.reason}`).join('\n')}`.trim() }],
-      structuredContent: { task, skillRoot: root, recommendations, prompt },
+      structuredContent: { task, skillRoot: skillRoot ? roots[0] : 'all', roots, recommendations, prompt },
     };
   }));
 
@@ -1764,11 +1879,106 @@ export function createMcpServer(config: BridgeConfig): McpServer {
     };
   }));
 
+  server.registerTool('handoff.create', {
+    title: 'Create Codex Handoff',
+    description: 'Validate and persist a structured handoff package for local Codex Runner. This does not execute code; call codex.task_start with the returned handoffId to run it.',
+    inputSchema: {
+      title: z.string().min(1).max(160),
+      objective: z.string().min(1).max(12_000),
+      workspace: z.string().optional(),
+      projectPath: z.string().optional(),
+      constraints: z.array(z.string()).min(1).max(20),
+      allowedOperations: z.array(z.enum(handoffAllowedOperations)).min(1).max(12),
+      testCommands: z.array(z.string()).max(10).default([]),
+      expectedArtifacts: z.array(z.string()).max(30).default([]),
+      riskLevel: z.enum(handoffRiskLevels).default('medium'),
+      acceptanceCriteria: z.array(z.string()).max(20).default([]),
+      skillContext: z.array(z.string()).max(20).default([]),
+      skillTask: z.string().max(4_000).optional(),
+      skillRoot: z.string().optional(),
+      maxSkillContext: z.number().int().min(0).max(10).default(3),
+      notes: z.union([
+        z.string().max(4_000),
+        z.array(z.string()).max(20),
+      ]).optional(),
+    },
+    outputSchema: {
+      handoffId: z.string(),
+      handoffFile: z.string(),
+      task: z.object(taskOutput),
+      handoff: z.object(handoffOutput),
+    },
+    annotations: { readOnlyHint: false, openWorldHint: false },
+  }, withToolLogging('handoff.create', async (args) => {
+    const { handoff, task } = createHandoff(args);
+    syncTraceContextForTask(task.id, task.projectPath, getRequestContext());
+    return {
+      content: [{
+        type: 'text' as const,
+        text: `Created handoff ${handoff.id}: ${handoff.title}\nNext: call codex.task_start with handoffId=${handoff.id}`,
+      }],
+      structuredContent: {
+        handoffId: handoff.id,
+        handoffFile: task.handoffFile ?? '',
+        task,
+        handoff,
+      },
+    };
+  }));
+
+  server.registerTool('handoff_create', {
+    title: 'Create Codex Handoff',
+    description: 'ChatGPT-compatible alias for handoff.create. Create a structured handoff package for local Codex Runner. This does not run code; call codex_task_start with the returned handoffId.',
+    inputSchema: {
+      title: z.string().min(1).max(160),
+      objective: z.string().min(1).max(12_000),
+      workspace: z.string().optional(),
+      projectPath: z.string().optional(),
+      constraints: z.array(z.string()).min(1).max(20),
+      allowedOperations: z.array(z.enum(handoffAllowedOperations)).min(1).max(12),
+      testCommands: z.array(z.string()).max(10).default([]),
+      expectedArtifacts: z.array(z.string()).max(30).default([]),
+      riskLevel: z.enum(handoffRiskLevels).default('medium'),
+      acceptanceCriteria: z.array(z.string()).max(20).default([]),
+      skillContext: z.array(z.string()).max(20).default([]),
+      skillTask: z.string().max(4_000).optional(),
+      skillRoot: z.string().optional(),
+      maxSkillContext: z.number().int().min(0).max(10).default(3),
+      notes: z.union([
+        z.string().max(4_000),
+        z.array(z.string()).max(20),
+      ]).optional(),
+    },
+    outputSchema: {
+      handoffId: z.string(),
+      handoffFile: z.string(),
+      task: z.object(taskOutput),
+      handoff: z.object(handoffOutput),
+    },
+    annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
+  }, withToolLogging('handoff_create', async (args) => {
+    const { handoff, task } = createHandoff(args);
+    syncTraceContextForTask(task.id, task.projectPath, getRequestContext());
+    return {
+      content: [{
+        type: 'text' as const,
+        text: `Created handoff ${handoff.id}: ${handoff.title}\nNext: call codex_task_start with handoffId=${handoff.id}`,
+      }],
+      structuredContent: {
+        handoffId: handoff.id,
+        handoffFile: task.handoffFile ?? '',
+        task,
+        handoff,
+      },
+    };
+  }));
+
   server.registerTool('codex.task_start', {
     title: 'Start Codex Runner Task',
     description: 'High-level ChatGPT entrypoint for local Codex work. Creates a persisted task record that the native app can show in Codex Runner; prefer this over raw shell.exec for broad local work.',
     inputSchema: {
-      task: z.string(),
+      handoffId: z.string().optional(),
+      task: z.string().optional(),
       workspace: z.string().optional(),
       projectPath: z.string().optional(),
       mode: z.enum(['normal', 'debug']).default('normal'),
@@ -1776,8 +1986,30 @@ export function createMcpServer(config: BridgeConfig): McpServer {
     },
     outputSchema: z.object(taskOutput).shape,
     annotations: { readOnlyHint: false, openWorldHint: false },
-  }, withToolLogging('codex.task_start', async ({ task, workspace, projectPath, mode, timeoutMs }) => {
-    const updated = startCodexRunnerTask(task, workspace, projectPath, mode, timeoutMs);
+  }, withToolLogging('codex.task_start', async ({ handoffId, task, workspace, projectPath, mode, timeoutMs }) => {
+    const updated = startCodexRunnerTask(task, workspace, projectPath, mode, timeoutMs, handoffId);
+    syncTraceContextForTask(updated.id, updated.projectPath, getRequestContext());
+    return {
+      content: [{ type: 'text' as const, text: `Codex task ${updated.id}: ${updated.title}` }],
+      structuredContent: updated,
+    };
+  }));
+
+  server.registerTool('codex_task_start', {
+    title: 'Start Codex Runner Task',
+    description: 'ChatGPT-compatible alias for codex.task_start. Start a local Codex Runner job from a handoffId or scoped project task. Prefer this over shell tools.',
+    inputSchema: {
+      handoffId: z.string().optional(),
+      task: z.string().optional(),
+      workspace: z.string().optional(),
+      projectPath: z.string().optional(),
+      mode: z.enum(['normal', 'debug']).default('normal'),
+      timeoutMs: z.number().int().min(1_000).max(600_000).default(120_000),
+    },
+    outputSchema: z.object(taskOutput).shape,
+    annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
+  }, withToolLogging('codex_task_start', async ({ handoffId, task, workspace, projectPath, mode, timeoutMs }) => {
+    const updated = startCodexRunnerTask(task, workspace, projectPath, mode, timeoutMs, handoffId);
     syncTraceContextForTask(updated.id, updated.projectPath, getRequestContext());
     return {
       content: [{ type: 'text' as const, text: `Codex task ${updated.id}: ${updated.title}` }],
@@ -1804,15 +2036,37 @@ export function createMcpServer(config: BridgeConfig): McpServer {
     };
   }));
 
-  server.registerTool('codex.result', {
-    title: 'Codex Runner Result',
-    description: 'Return the current task result envelope for the native Codex Runner view. This is a stable high-level result shape; full CLI diff/test attachment lands in the next runner phase.',
+  server.registerTool('codex_status', {
+    title: 'Codex Runner Status',
+    description: 'ChatGPT-compatible alias for codex.status. Read one Codex Runner task or list recent task records.',
     inputSchema: {
       taskId: z.string().optional(),
-      limit: z.number().int().min(1).max(20).default(5),
+      limit: z.number().int().min(1).max(100).default(20),
     },
     outputSchema: {
       tasks: z.array(z.object(taskOutput)),
+    },
+    annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
+  }, withToolLogging('codex_status', async ({ taskId, limit }) => {
+    const tasks = listCodexRunnerTasks(taskId, limit);
+    return {
+      content: [{ type: 'text' as const, text: tasks.length ? tasks.map(formatTask).join('\n') : 'No Codex Runner tasks found.' }],
+      structuredContent: { tasks },
+    };
+  }));
+
+  server.registerTool('codex.result', {
+    title: 'Codex Runner Result',
+    description: 'Return a compact Codex Runner result summary. Full log and diff are opt-in to reduce hosted ChatGPT safety-check blocks.',
+    inputSchema: {
+      taskId: z.string().optional(),
+      limit: z.number().int().min(1).max(20).default(5),
+      includeLog: z.boolean().default(false),
+      includeDiff: z.boolean().default(false),
+    },
+    outputSchema: {
+      tasks: z.array(z.object(taskOutput)),
+      handoff: z.object(handoffOutput).optional(),
       changedFiles: z.array(z.object({
         path: z.string(),
         oldPath: z.string().optional(),
@@ -1825,26 +2079,80 @@ export function createMcpServer(config: BridgeConfig): McpServer {
       logTail: z.string(),
     },
     annotations: { readOnlyHint: true, openWorldHint: false },
-  }, withToolLogging('codex.result', async ({ taskId, limit }) => {
+  }, withToolLogging('codex.result', async ({ taskId, limit, includeLog, includeDiff }) => {
     const tasks = listCodexRunnerTasks(taskId, limit).map(refreshCodexTaskResult);
     const primary = tasks[0];
+    const compactTasks = tasks.map(compactCodexTask);
     return {
       content: [{
         type: 'text' as const,
         text: primary
           ? [
               formatTask(primary),
-              primary.logFile ? `log=${primary.logFile}` : '',
-              primary.changedFiles?.length ? `changed=${primary.changedFiles.map((file) => file.path).join(', ')}` : '',
+              primary.changedFiles?.length ? `changed files=${primary.changedFiles.length}` : '',
+              primary.testResult ? `result=${truncate(primary.testResult, 1200)}` : '',
+              includeLog || includeDiff ? 'verbose fields requested explicitly' : 'compact result: logTail and diffPreview omitted by default',
             ].filter(Boolean).join('\n')
           : 'No Codex Runner result records yet.',
       }],
       structuredContent: {
-        tasks,
+        tasks: compactTasks,
+        handoff: primary?.handoff,
         changedFiles: primary?.changedFiles ?? [],
-        diffPreview: primary?.diffPreview ?? '',
+        diffPreview: includeDiff ? primary?.diffPreview ?? '' : '',
         testResult: primary?.testResult ?? '',
-        logTail: primary?.logFile ? readTextTail(primary.logFile, 40_000) : '',
+        logTail: includeLog && primary?.logFile ? readTextTail(primary.logFile, 12_000) : '',
+      },
+    };
+  }));
+
+  server.registerTool('codex_result', {
+    title: 'Codex Runner Result',
+    description: 'ChatGPT-compatible alias for codex.result. Return a compact task summary by default; set includeLog/includeDiff only when needed.',
+    inputSchema: {
+      taskId: z.string().optional(),
+      limit: z.number().int().min(1).max(20).default(5),
+      includeLog: z.boolean().default(false),
+      includeDiff: z.boolean().default(false),
+    },
+    outputSchema: {
+      tasks: z.array(z.object(taskOutput)),
+      handoff: z.object(handoffOutput).optional(),
+      changedFiles: z.array(z.object({
+        path: z.string(),
+        oldPath: z.string().optional(),
+        status: z.string(),
+        insertions: z.number(),
+        deletions: z.number(),
+      })),
+      diffPreview: z.string(),
+      testResult: z.string(),
+      logTail: z.string(),
+    },
+    annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
+  }, withToolLogging('codex_result', async ({ taskId, limit, includeLog, includeDiff }) => {
+    const tasks = listCodexRunnerTasks(taskId, limit).map(refreshCodexTaskResult);
+    const primary = tasks[0];
+    const compactTasks = tasks.map(compactCodexTask);
+    return {
+      content: [{
+        type: 'text' as const,
+        text: primary
+          ? [
+              formatTask(primary),
+              primary.changedFiles?.length ? `changed files=${primary.changedFiles.length}` : '',
+              primary.testResult ? `result=${truncate(primary.testResult, 1200)}` : '',
+              includeLog || includeDiff ? 'verbose fields requested explicitly' : 'compact result: logTail and diffPreview omitted by default',
+            ].filter(Boolean).join('\n')
+          : 'No Codex Runner result records yet.',
+      }],
+      structuredContent: {
+        tasks: compactTasks,
+        handoff: primary?.handoff,
+        changedFiles: primary?.changedFiles ?? [],
+        diffPreview: includeDiff ? primary?.diffPreview ?? '' : '',
+        testResult: primary?.testResult ?? '',
+        logTail: includeLog && primary?.logFile ? readTextTail(primary.logFile, 12_000) : '',
       },
     };
   }));
@@ -1994,6 +2302,7 @@ export function createMcpServer(config: BridgeConfig): McpServer {
     },
     outputSchema: {
       checks: z.array(z.object(healthCheckOutput)),
+      codexProvider: z.object(codexProviderOutput),
     },
     annotations: { readOnlyHint: true, openWorldHint: true },
   }, withToolLogging('bridge.health', async ({ includePublic, publicBaseUrl, timeoutMs }) => {
@@ -2002,7 +2311,7 @@ export function createMcpServer(config: BridgeConfig): McpServer {
     if (includePublic) checks.push(await checkHealth('public', `${publicBaseUrl.replace(/\/$/, '')}/health`, timeoutMs));
     return {
       content: [{ type: 'text' as const, text: checks.map((check) => `${check.name}: ${check.ok ? 'ok' : 'failed'} ${check.status ?? ''} ${check.error ?? ''}`.trim()).join('\n') }],
-      structuredContent: { checks },
+      structuredContent: { checks, codexProvider: codexProviderStatus() },
     };
   }));
 
@@ -2016,6 +2325,7 @@ export function createMcpServer(config: BridgeConfig): McpServer {
     },
     outputSchema: {
       checks: z.array(z.object(healthCheckOutput)),
+      codexProvider: z.object(codexProviderOutput),
     },
     annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: true },
   }, withToolLogging('bridge_health', async ({ includePublic, publicBaseUrl, timeoutMs }) => {
@@ -2024,7 +2334,7 @@ export function createMcpServer(config: BridgeConfig): McpServer {
     if (includePublic) checks.push(await checkHealth('public', `${publicBaseUrl.replace(/\/$/, '')}/health`, timeoutMs));
     return {
       content: [{ type: 'text' as const, text: checks.map((check) => `${check.name}: ${check.ok ? 'ok' : 'failed'} ${check.status ?? ''} ${check.error ?? ''}`.trim()).join('\n') }],
-      structuredContent: { checks },
+      structuredContent: { checks, codexProvider: codexProviderStatus() },
     };
   }));
 
@@ -2289,6 +2599,10 @@ function isToolAllowedForProfile(profile: BridgeConfig['toolProfile'], tool: str
       'local_write_file',
       'local_bundle_dir',
       'local_workspace_action',
+      'handoff_create',
+      'codex_task_start',
+      'codex_status',
+      'codex_result',
     ]).has(tool);
   }
 
@@ -2306,6 +2620,7 @@ function isToolAllowedForProfile(profile: BridgeConfig['toolProfile'], tool: str
   ]);
   if (alwaysSafe.has(tool)) return true;
   if (tool.startsWith('codex.')) return true;
+  if (tool.startsWith('handoff.')) return true;
 
   if (profile === 'codex-runner-only') {
     return false;
@@ -2738,9 +3053,9 @@ function formatPolicySummary(policyPath: string, policy: BridgePolicy, warnings:
 }
 
 function resolveSkillRoot(skillRoot?: string): string {
-  const roots = configuredSkillRoots();
+  const roots = knownSkillRoots();
   if (!roots.length) {
-    throw new Error('No skill roots are configured. Add ~/.codex/skills to policy.skillRoots.');
+    throw new Error('No skill roots are configured. Add ~/.codex/skills to policy.skillRoots or create .codex/skills under an approved project.');
   }
   if (!skillRoot) return roots[0];
 
@@ -2759,6 +3074,23 @@ function resolveSkillRoot(skillRoot?: string): string {
   return requested;
 }
 
+function resolveSkillRootsForQuery(skillRoot?: string, projectPath?: string): string[] {
+  if (skillRoot) return [resolveSkillRoot(skillRoot)];
+
+  const roots = knownSkillRoots(projectPath);
+  if (!roots.length) {
+    throw new Error('No skill roots are configured. Add ~/.codex/skills to policy.skillRoots or create .codex/skills under an approved project.');
+  }
+  return roots;
+}
+
+function knownSkillRoots(projectPath?: string): string[] {
+  const roots = configuredSkillRoots();
+  const projectRoots = projectSkillRoots(projectPath)
+    .filter((root) => !roots.includes(root));
+  return [...roots, ...projectRoots];
+}
+
 function configuredSkillRoots(): string[] {
   const roots = (activeConfig?.policy.skillRoots ?? [])
     .map((entry) => path.resolve(expandHome(entry)))
@@ -2768,6 +3100,27 @@ function configuredSkillRoots(): string[] {
 
   const fallback = path.join(os.homedir(), '.codex', 'skills');
   return fs.existsSync(fallback) && fs.statSync(fallback).isDirectory() ? [fallback] : [];
+}
+
+function projectSkillRoots(projectPath?: string): string[] {
+  const candidates = new Set<string>();
+  const addRoot = (root: string) => {
+    const skillRoot = path.join(root, '.codex', 'skills');
+    if (fs.existsSync(skillRoot) && fs.statSync(skillRoot).isDirectory()) {
+      candidates.add(path.resolve(skillRoot));
+    }
+  };
+
+  if (projectPath) {
+    addRoot(resolveProject(projectPath));
+    return [...candidates];
+  }
+
+  for (const root of activeConfig?.policy.allowedProjectRoots ?? []) {
+    const resolved = path.resolve(expandHome(root));
+    if (fs.existsSync(resolved) && fs.statSync(resolved).isDirectory()) addRoot(resolved);
+  }
+  return [...candidates];
 }
 
 function resolveInsideSkillRoot(root: string, relPath: string): string {
@@ -2782,15 +3135,7 @@ function resolveInsideSkillRoot(root: string, relPath: string): string {
 }
 
 function listLocalSkills(root: string, maxResults: number) {
-  const skills: Array<{
-    id: string;
-    name: string;
-    description: string | undefined;
-    root: string;
-    path: string;
-    directory: string;
-    skillFile: string;
-  }> = [];
+  const skills: ReturnType<typeof skillRecord>[] = [];
   let truncated = false;
 
   function walk(dir: string) {
@@ -2820,6 +3165,30 @@ function listLocalSkills(root: string, maxResults: number) {
   return { skills, truncated };
 }
 
+function listLocalSkillsAcrossRoots(roots: string[], maxResults: number) {
+  const skills: ReturnType<typeof skillRecord>[] = [];
+  let truncated = false;
+  for (const root of roots) {
+    if (skills.length >= maxResults) {
+      truncated = true;
+      break;
+    }
+    const result = listLocalSkills(root, maxResults - skills.length);
+    skills.push(...result.skills);
+    truncated = truncated || result.truncated;
+  }
+  const seen = new Set<string>();
+  const unique = skills
+    .sort((a, b) => a.id.localeCompare(b.id) || a.root.localeCompare(b.root))
+    .filter((skill) => {
+      const key = `${skill.root}:${skill.skillFile}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  return { skills: unique, truncated };
+}
+
 function skillRecord(root: string, skillFilePath: string) {
   const skillFile = path.relative(root, skillFilePath).split(path.sep).join('/');
   const directory = path.dirname(skillFile).split(path.sep).join('/');
@@ -2834,7 +3203,16 @@ function skillRecord(root: string, skillFilePath: string) {
     path: directory,
     directory,
     skillFile,
+    activated: isSkillActivated(root, directory),
+    source: skillRootSource(root),
   };
+}
+
+function skillRootSource(root: string): 'policy' | 'project' | 'fallback' {
+  const resolved = path.resolve(root);
+  if ((activeConfig?.policy.skillRoots ?? []).map((entry) => path.resolve(expandHome(entry))).includes(resolved)) return 'policy';
+  if (resolved === path.join(os.homedir(), '.codex', 'skills')) return 'fallback';
+  return 'project';
 }
 
 function parseSkillMetadata(content: string): { name?: string; description?: string } {
@@ -2877,6 +3255,13 @@ function searchLocalSkills(root: string, query: string, maxResults: number) {
     .sort((a, b) => b.score - a.score || a.id.localeCompare(b.id))
     .slice(0, maxResults);
   return skills;
+}
+
+function searchLocalSkillsAcrossRoots(roots: string[], query: string, maxResults: number) {
+  return roots
+    .flatMap((root) => searchLocalSkills(root, query, maxResults))
+    .sort((a, b) => b.score - a.score || a.id.localeCompare(b.id) || a.root.localeCompare(b.root))
+    .slice(0, maxResults);
 }
 
 function scoreText(haystack: string, needle: string, skill: { id: string; name: string; description?: string; path: string }) {
@@ -2930,6 +3315,18 @@ function findLocalSkill(root: string, requested: string) {
   return record;
 }
 
+function findLocalSkillAcrossRoots(roots: string[], requested: string): { root: string; record: ReturnType<typeof skillRecord> } {
+  const errors: string[] = [];
+  for (const root of roots) {
+    try {
+      return { root, record: findLocalSkill(root, requested) };
+    } catch (err) {
+      errors.push(err instanceof Error ? err.message : String(err));
+    }
+  }
+  throw new Error(`Skill not found in approved skill roots: ${requested}${errors.length ? ` (${errors.join('; ')})` : ''}`);
+}
+
 function readSkillFile(root: string, relPath: string, maxBytes: number) {
   const fullPath = resolveInsideSkillRoot(root, relPath);
   const stat = fs.statSync(fullPath);
@@ -2950,6 +3347,7 @@ function bundleLocalSkill(
   root: string,
   record: ReturnType<typeof skillRecord>,
   includeReferences: boolean,
+  activationId: string | undefined,
   maxReferenceFiles: number,
   maxBytes: number,
 ) {
@@ -2976,6 +3374,10 @@ function bundleLocalSkill(
 
   addFile(record.skillFile);
   if (includeReferences && files[0]?.content) {
+    if (!isValidSkillActivation(root, record.directory, activationId)) {
+      notes.push('Reference files are gated. Call skill.read for this skill first, then call skill.bundle with the returned activationId.');
+      return { files, truncated, notes };
+    }
     const refs = extractSkillReferences(root, record, files[0].content).slice(0, maxReferenceFiles);
     for (const ref of refs) addFile(ref);
     if (refs.length >= maxReferenceFiles) notes.push('Reference files were limited by maxReferenceFiles.');
@@ -3015,6 +3417,13 @@ function routeLocalSkills(root: string, task: string, maxResults: number) {
       ? `matched task terms in ${skill.id}: ${skill.snippet}`
       : `matched task terms in ${skill.id}`,
   }));
+}
+
+function routeLocalSkillsAcrossRoots(roots: string[], task: string, maxResults: number) {
+  return roots
+    .flatMap((root) => routeLocalSkills(root, task, maxResults))
+    .sort((a, b) => b.score - a.score || a.id.localeCompare(b.id) || a.root.localeCompare(b.root))
+    .slice(0, maxResults);
 }
 
 function formatSkillList(skills: Array<ReturnType<typeof skillRecord>>, truncated: boolean) {
@@ -3303,6 +3712,50 @@ function writeJsonFile<T>(name: string, value: T) {
   fs.writeFileSync(runtimeFile(name), `${JSON.stringify(value, null, 2)}\n`);
 }
 
+function readSkillActivations(): ActivatedSkillRecord[] {
+  return readJsonFile<ActivatedSkillRecord[]>(SKILL_ACTIVATION_FILE, []);
+}
+
+function writeSkillActivations(records: ActivatedSkillRecord[]) {
+  writeJsonFile(SKILL_ACTIVATION_FILE, records);
+}
+
+function skillActivationKey(root: string, directory: string): string {
+  return `${path.resolve(root)}::${directory}`;
+}
+
+function findSkillActivation(root: string, directory: string): ActivatedSkillRecord | undefined {
+  const key = skillActivationKey(root, directory);
+  return readSkillActivations().find((record) => skillActivationKey(record.root, record.directory) === key);
+}
+
+function isSkillActivated(root: string, directory: string): boolean {
+  return Boolean(findSkillActivation(root, directory));
+}
+
+function isValidSkillActivation(root: string, directory: string, activationId: string | undefined): boolean {
+  if (!activationId) return false;
+  return findSkillActivation(root, directory)?.activationId === activationId;
+}
+
+function markSkillActivated(root: string, record: ReturnType<typeof skillRecord>): ActivatedSkillRecord {
+  const key = skillActivationKey(root, record.directory);
+  const now = nowIso();
+  const records = readSkillActivations().filter((item) => skillActivationKey(item.root, item.directory) !== key);
+  const activated: ActivatedSkillRecord = {
+    id: record.id,
+    root: path.resolve(root),
+    directory: record.directory,
+    skillFile: record.skillFile,
+    activationId: `skillact_${Date.now().toString(36)}_${randomBytes(4).toString('hex')}`,
+    activatedAt: now,
+  };
+  records.push(activated);
+  writeSkillActivations(records.sort((a, b) => a.id.localeCompare(b.id) || a.root.localeCompare(b.root)));
+  auditEvent('skill.activate', { skill: record.id, root, directory: record.directory, skillFile: record.skillFile });
+  return activated;
+}
+
 function readWorkspaces(): WorkspaceRecord[] {
   return readJsonFile<WorkspaceRecord[]>('workspaces.json', []);
 }
@@ -3440,6 +3893,168 @@ function nowIso(): string {
   return new Date().toISOString();
 }
 
+function createHandoff(input: HandoffCreateInput): { handoff: HandoffPackage; task: TaskRecord } {
+  const config = activeConfig;
+  if (!config) throw new Error('Bridge config is not initialized');
+  const root = input.projectPath
+    ? resolveProject(input.projectPath)
+    : input.workspace
+      ? resolveWorkspaceRecord(input.workspace).path
+      : undefined;
+  if (!root) throw new Error('handoff.create requires projectPath or workspace.');
+
+  const now = nowIso();
+  const id = `handoff_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+  const routedSkills = routeSkillsForHandoff(input, root);
+  const handoff: HandoffPackage = {
+    version: '1',
+    id,
+    title: input.title.trim(),
+    objective: input.objective.trim(),
+    projectPath: root,
+    workspace: input.workspace,
+    constraints: normalizeStringList(input.constraints),
+    allowedOperations: Array.from(new Set(input.allowedOperations)),
+    testCommands: normalizeStringList(input.testCommands ?? []),
+    expectedArtifacts: normalizeStringList(input.expectedArtifacts ?? []),
+    riskLevel: input.riskLevel ?? 'medium',
+    acceptanceCriteria: normalizeStringList(input.acceptanceCriteria ?? []),
+    skillContext: normalizeStringList([...(input.skillContext ?? []), ...routedSkills.context]),
+    skillActivations: routedSkills.activations,
+    notes: normalizeOptionalNotes(input.notes),
+    createdAt: now,
+    updatedAt: now,
+  };
+  if (!handoff.constraints.length) throw new Error('handoff.create requires at least one constraint.');
+  if (!handoff.allowedOperations.length) throw new Error('handoff.create requires at least one allowed operation.');
+
+  const handoffDir = path.join(config.dataDir, 'handoffs');
+  fs.mkdirSync(handoffDir, { recursive: true });
+  const handoffFile = path.join(handoffDir, `${id}.json`);
+  fs.writeFileSync(handoffFile, `${JSON.stringify(handoff, null, 2)}\n`);
+
+  const task: TaskRecord = {
+    id,
+    title: handoff.title,
+    workspace: handoff.workspace,
+    projectPath: handoff.projectPath,
+    status: 'active',
+    notes: [{ ts: now, text: `handoff.created risk=${handoff.riskLevel}; operations=${handoff.allowedOperations.join(',')}` }],
+    createdAt: now,
+    updatedAt: now,
+    handoffId: id,
+    handoffFile,
+    handoff,
+  };
+  const tasks = readTasks();
+  tasks.push(task);
+  writeTasks(tasks);
+  auditEvent('handoff.create', {
+    id,
+    title: handoff.title,
+    projectPath: handoff.projectPath,
+    workspace: handoff.workspace,
+    riskLevel: handoff.riskLevel,
+    allowedOperations: handoff.allowedOperations,
+    handoffFile,
+  });
+  return { handoff, task };
+}
+
+function normalizeStringList(values: string[]): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const value of values) {
+    const trimmed = value.trim();
+    if (!trimmed || seen.has(trimmed)) continue;
+    seen.add(trimmed);
+    out.push(trimmed);
+  }
+  return out;
+}
+
+function routeSkillsForHandoff(input: HandoffCreateInput, projectPath: string): { context: string[]; activations: HandoffSkillActivation[] } {
+  const task = input.skillTask?.trim();
+  const limit = input.maxSkillContext ?? 3;
+  if (!task || limit <= 0) return { context: [], activations: [] };
+
+  const roots = resolveSkillRootsForQuery(input.skillRoot, projectPath);
+  const recommendations = routeLocalSkillsAcrossRoots(roots, task, limit);
+  return {
+    context: recommendations.map((skill) => [
+      `skill: ${skill.id}`,
+      `name: ${skill.name}`,
+      skill.description ? `description: ${skill.description}` : undefined,
+      `file: ${path.posix.join(skill.root, skill.skillFile)}`,
+      `activated: ${skill.activated ? 'yes' : 'no'}`,
+      `reason: ${skill.reason}`,
+      'next: call skill.read before using referenced files; skill.bundle references are gated until activation',
+    ].filter(Boolean).join(' | ')),
+    activations: recommendations.map((skill) => ({
+      id: skill.id,
+      name: skill.name,
+      root: skill.root,
+      skillFile: skill.skillFile,
+      activated: Boolean(skill.activated),
+      reason: skill.reason,
+    })),
+  };
+}
+
+function normalizeOptionalNotes(value: HandoffCreateInput['notes']): string | undefined {
+  if (!value) return undefined;
+  if (Array.isArray(value)) return normalizeStringList(value).join('\n') || undefined;
+  return value.trim() || undefined;
+}
+
+function readHandoff(handoffId: string): HandoffPackage {
+  const config = activeConfig;
+  if (!config) throw new Error('Bridge config is not initialized');
+  const tasks = readTasks();
+  const task = tasks.find((item) => item.handoffId === handoffId || item.id === handoffId);
+  if (task?.handoff) return task.handoff;
+  const file = task?.handoffFile ?? path.join(config.dataDir, 'handoffs', `${handoffId}.json`);
+  if (!pathIsInsideRoot(path.resolve(file), path.join(config.dataDir, 'handoffs'))) {
+    throw new Error(`Handoff file is outside runtime handoff directory: ${file}`);
+  }
+  if (!fs.existsSync(file)) throw new Error(`Handoff not found: ${handoffId}`);
+  const handoff = JSON.parse(fs.readFileSync(file, 'utf-8')) as HandoffPackage;
+  resolveProject(handoff.projectPath);
+  return handoff;
+}
+
+function formatHandoffPrompt(handoff: HandoffPackage): string {
+  return [
+    `Handoff: ${handoff.title}`,
+    '',
+    'Objective:',
+    handoff.objective,
+    '',
+    `Project root: ${handoff.projectPath}`,
+    `Risk level: ${handoff.riskLevel}`,
+    `Allowed operations: ${handoff.allowedOperations.join(', ')}`,
+    '',
+    'Constraints:',
+    ...handoff.constraints.map((item) => `- ${item}`),
+    handoff.testCommands.length ? '\nTest commands:' : '',
+    ...handoff.testCommands.map((item) => `- ${item}`),
+    handoff.expectedArtifacts.length ? '\nExpected artifacts:' : '',
+    ...handoff.expectedArtifacts.map((item) => `- ${item}`),
+    handoff.acceptanceCriteria.length ? '\nAcceptance criteria:' : '',
+    ...handoff.acceptanceCriteria.map((item) => `- ${item}`),
+    handoff.skillContext.length ? '\nSkill context:' : '',
+    ...handoff.skillContext.map((item) => `- ${item}`),
+    handoff.notes ? '\nNotes:' : '',
+    handoff.notes ?? '',
+    '',
+    'Runner instructions:',
+    '- Operate only inside the approved project root.',
+    '- Keep changes scoped to the handoff objective.',
+    '- Before finishing, report changed files and tests run.',
+    '- Do not commit changes unless the handoff explicitly asks for it.',
+  ].filter((line) => line !== '').join('\n');
+}
+
 function startTask(title: string, workspace?: string, projectPath?: string): TaskRecord {
   const now = nowIso();
   const resolvedPath = projectPath ? resolveProject(projectPath) : workspace ? resolveWorkspaceRecord(workspace).path : undefined;
@@ -3502,17 +4117,111 @@ function isCodexRunnerTask(task: TaskRecord): boolean {
     || task.command?.includes(' exec --json --cd ') === true;
 }
 
+function codexProviderStatus() {
+  const provider = activeConfig?.codexProvider ?? {
+    kind: 'official' as const,
+    apiKeyEnv: 'OPENAI_API_KEY',
+  };
+  return {
+    kind: provider.kind,
+    profile: provider.profile,
+    codexHome: provider.codexHome,
+    model: provider.model,
+    baseUrlHost: provider.baseUrl ? safeUrlHost(provider.baseUrl) : undefined,
+    codexBin: resolveCodexBinary(),
+    apiKeyEnv: provider.apiKeyEnv,
+    apiKeyConfigured: Boolean(process.env[provider.apiKeyEnv]),
+  };
+}
+
+function safeUrlHost(value: string): string | undefined {
+  try {
+    return new URL(value).host;
+  } catch {
+    return undefined;
+  }
+}
+
+function buildCodexRunnerEnv(config: BridgeConfig): NodeJS.ProcessEnv {
+  const env = { ...process.env };
+  env.PATH = buildCodexRunnerPath(env.PATH);
+  const provider = config.codexProvider;
+  if (provider.codexHome) env.CODEX_HOME = provider.codexHome;
+  if (provider.model) env.CODEX_MODEL = provider.model;
+  if (provider.profile) env.CODEX_PROFILE = provider.profile;
+  if (provider.baseUrl) env.OPENAI_BASE_URL = provider.baseUrl;
+  if (provider.apiKeyEnv !== 'OPENAI_API_KEY' && process.env[provider.apiKeyEnv]) {
+    env.OPENAI_API_KEY = process.env[provider.apiKeyEnv];
+  }
+  return env;
+}
+
+function resolveCodexBinary(): string {
+  const configured = process.env.LOCALBRIDGE_CODEX_BIN || process.env.CODEX_BIN;
+  if (configured?.trim()) return expandExecutablePath(configured.trim());
+  const candidates = [
+    path.join(os.homedir(), '.local', 'bin', 'codex'),
+    path.join(os.homedir(), '.local', 'node', 'current', 'bin', 'codex'),
+    '/opt/homebrew/bin/codex',
+    '/usr/local/bin/codex',
+    '/usr/bin/codex',
+  ];
+  return candidates.find((candidate) => fs.existsSync(candidate)) ?? 'codex';
+}
+
+function expandExecutablePath(value: string): string {
+  if (value === '~' || value.startsWith('~/')) {
+    return path.join(os.homedir(), value.slice(2));
+  }
+  return value;
+}
+
+function buildCodexRunnerPath(currentPath: string | undefined): string {
+  const entries = [
+    path.join(os.homedir(), '.local', 'bin'),
+    path.join(os.homedir(), '.local', 'node', 'current', 'bin'),
+    '/opt/homebrew/bin',
+    '/opt/homebrew/sbin',
+    '/usr/local/bin',
+    '/usr/bin',
+    '/bin',
+    '/usr/sbin',
+    '/sbin',
+    ...(currentPath ? currentPath.split(path.delimiter) : []),
+  ];
+  return [...new Set(entries.filter(Boolean))].join(path.delimiter);
+}
+
+function formatCodexSpawnError(err: Error, codexBin: string): string {
+  const code = (err as NodeJS.ErrnoException).code;
+  if (code === 'ENOENT') {
+    return `codex runner failed to start: executable not found (${codexBin}). Set LOCALBRIDGE_CODEX_BIN=/absolute/path/to/codex or make sure codex is installed in ~/.local/bin, ~/.local/node/current/bin, /opt/homebrew/bin, or /usr/local/bin for launchd/App services.`;
+  }
+  return `codex runner failed to start: ${err.message}`;
+}
+
 function startCodexRunnerTask(
-  title: string,
+  title: string | undefined,
   workspace: string | undefined,
   projectPath: string | undefined,
   mode: 'normal' | 'debug',
   timeoutMs: number,
+  handoffId?: string,
 ): TaskRecord {
   const config = activeConfig;
   if (!config) throw new Error('Bridge config is not initialized');
-  const root = projectPath ? resolveProject(projectPath) : workspace ? resolveWorkspaceRecord(workspace).path : undefined;
+  const handoff = handoffId ? readHandoff(handoffId) : undefined;
+  const effectiveWorkspace = handoff?.workspace ?? workspace;
+  const root = handoff
+    ? resolveProject(handoff.projectPath)
+    : projectPath
+      ? resolveProject(projectPath)
+      : workspace
+        ? resolveWorkspaceRecord(workspace).path
+        : undefined;
   if (!root) throw new Error('codex.task_start requires projectPath or workspace.');
+  const effectiveTitle = handoff?.title ?? title?.trim();
+  if (!effectiveTitle) throw new Error('codex.task_start requires task when handoffId is not provided.');
 
   const now = nowIso();
   const id = `codex_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
@@ -3520,9 +4229,10 @@ function startCodexRunnerTask(
   fs.mkdirSync(logDir, { recursive: true });
   const logFile = path.join(logDir, `${id}.jsonl`);
   const resultFile = path.join(logDir, `${id}.last-message.txt`);
-  const codexBin = process.env.CODEX_BIN || 'codex';
-  const prompt = [
-    title,
+  const codexBin = resolveCodexBinary();
+  const provider = codexProviderStatus();
+  const prompt = handoff ? formatHandoffPrompt(handoff) : [
+    effectiveTitle,
     '',
     'Operate only inside the approved project root. Keep changes scoped.',
     'Before finishing, report changed files and any tests you ran.',
@@ -3531,19 +4241,19 @@ function startCodexRunnerTask(
     'exec',
     '--json',
     '--cd', root,
-    '--sandbox', 'workspace-write',
-    '--ask-for-approval', 'never',
+    '--sandbox', 'danger-full-access',
+    '--dangerously-bypass-approvals-and-sandbox',
     '--output-last-message', resultFile,
     prompt,
   ];
   const command = [codexBin, ...args.map(shellQuote)].join(' ');
   const task: TaskRecord = {
     id,
-    title,
-    workspace,
+    title: effectiveTitle,
+    workspace: effectiveWorkspace,
     projectPath: root,
     status: 'running',
-    notes: [{ ts: now, text: `codex.mode=${mode}; timeoutMs=${timeoutMs}` }],
+    notes: [{ ts: now, text: `codex.mode=${mode}; timeoutMs=${timeoutMs}; provider=${provider.kind}${provider.baseUrlHost ? `@${provider.baseUrlHost}` : ''}${handoff ? `; handoffId=${handoff.id}; risk=${handoff.riskLevel}` : ''}` }],
     createdAt: now,
     updatedAt: now,
     mode,
@@ -3551,6 +4261,9 @@ function startCodexRunnerTask(
     command,
     logFile,
     resultFile,
+    handoffId: handoff?.id,
+    handoffFile: handoff ? path.join(config.dataDir, 'handoffs', `${handoff.id}.json`) : undefined,
+    handoff,
     startedAt: now,
     changedFiles: [],
     diffPreview: '',
@@ -3560,16 +4273,16 @@ function startCodexRunnerTask(
   const tasks = readTasks();
   tasks.push(task);
   writeTasks(tasks);
-  auditEvent('codex.task_start', { id, title, workspace, projectPath: root, mode, timeoutMs, logFile, resultFile });
+  auditEvent('codex.task_start', { id, title: effectiveTitle, workspace: effectiveWorkspace, projectPath: root, mode, timeoutMs, logFile, resultFile, handoffId: handoff?.id, provider });
 
   const stream = fs.createWriteStream(logFile, { flags: 'a' });
-  stream.write(`${JSON.stringify({ ts: now, event: 'runner.start', command, projectPath: root })}\n`);
+  stream.write(`${JSON.stringify({ ts: now, event: 'runner.start', command, projectPath: root, provider })}\n`);
   let timedOut = false;
   try {
     const child = spawn(codexBin, args, {
       cwd: root,
       stdio: ['ignore', 'pipe', 'pipe'],
-      env: process.env,
+      env: buildCodexRunnerEnv(config),
     });
     child.stdout?.pipe(stream, { end: false });
     child.stderr?.pipe(stream, { end: false });
@@ -3582,13 +4295,14 @@ function startCodexRunnerTask(
 
     child.on('error', (err) => {
       clearTimeout(timeout);
-      stream.write(`${JSON.stringify({ ts: nowIso(), event: 'runner.error', error: err.message })}\n`);
+      const message = formatCodexSpawnError(err, codexBin);
+      stream.write(`${JSON.stringify({ ts: nowIso(), event: 'runner.error', error: message })}\n`);
       stream.end();
       updateTask(id, {
         status: 'failed',
         completedAt: nowIso(),
-        testResult: err.message,
-        note: `codex runner failed to start: ${err.message}`,
+        testResult: message,
+        note: message,
       });
     });
 
@@ -3645,6 +4359,29 @@ function refreshCodexRunnerTasks(): TaskRecord[] {
   });
   if (changed) writeTasks(tasks);
   return tasks;
+}
+
+function compactCodexTask(task: TaskRecord): TaskRecord {
+  return {
+    id: task.id,
+    title: task.title,
+    workspace: task.workspace,
+    projectPath: task.projectPath,
+    status: task.status,
+    notes: task.notes.slice(-3),
+    createdAt: task.createdAt,
+    updatedAt: task.updatedAt,
+    mode: task.mode,
+    timeoutMs: task.timeoutMs,
+    handoffId: task.handoffId,
+    handoff: task.handoff,
+    exitCode: task.exitCode,
+    signal: task.signal,
+    startedAt: task.startedAt,
+    completedAt: task.completedAt,
+    changedFiles: task.changedFiles?.slice(0, 80),
+    testResult: task.testResult,
+  };
 }
 
 function refreshCodexTaskResult(task: TaskRecord): TaskRecord {

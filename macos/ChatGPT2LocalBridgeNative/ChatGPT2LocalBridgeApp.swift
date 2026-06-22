@@ -205,6 +205,7 @@ enum AppWorkspace: String, CaseIterable, Identifiable {
     case tutorial
     case policy
     case tools
+    case provider
     case trace
     case codex
     case exchange
@@ -222,6 +223,7 @@ enum AppWorkspace: String, CaseIterable, Identifiable {
         case .tutorial: return language == .zh ? "创建教程" : "Setup Guide"
         case .policy: return language == .zh ? "策略中心" : "Policy Center"
         case .tools: return language == .zh ? "工具目录" : "Tool Catalog"
+        case .provider: return language == .zh ? "Provider 配置" : "Codex Provider"
         case .trace: return language == .zh ? "调用记录" : "Trace Studio"
         case .codex: return language == .zh ? "Codex 任务" : "Codex Runner"
         case .exchange: return language == .zh ? "文件交换" : "Files & Exchange"
@@ -239,6 +241,7 @@ enum AppWorkspace: String, CaseIterable, Identifiable {
         case .tutorial: return language == .zh ? "复刻 ChatGPT New App 表单" : "ChatGPT New App form mirror"
         case .policy: return language == .zh ? "根目录、技能、Shell 规则" : "roots, skills, shell rules"
         case .tools: return language == .zh ? "分层 MCP 工具面" : "tiered MCP tool surface"
+        case .provider: return language == .zh ? "官方 / API / sub2api" : "official, API, sub2api"
         case .trace: return language == .zh ? "时间线、表格、详情" : "timeline, table, inspector"
         case .codex: return language == .zh ? "本地 Codex CLI 任务" : "local Codex CLI tasks"
         case .exchange: return language == .zh ? "读取、打包、下载" : "reads, bundles, downloads"
@@ -252,6 +255,7 @@ enum AppWorkspace: String, CaseIterable, Identifiable {
         case .tutorial: return "list.clipboard.fill"
         case .policy: return "checklist.checked"
         case .tools: return "wrench.and.screwdriver.fill"
+        case .provider: return "server.rack"
         case .trace: return "waveform.path.ecg.rectangle"
         case .codex: return "sparkles.rectangle.stack.fill"
         case .exchange: return "arrow.left.arrow.right.square.fill"
@@ -265,6 +269,7 @@ enum AppWorkspace: String, CaseIterable, Identifiable {
         case .tutorial: return .red
         case .policy: return .indigo
         case .tools: return .teal
+        case .provider: return .mint
         case .trace: return .orange
         case .codex: return .purple
         case .exchange: return .cyan
@@ -495,6 +500,8 @@ struct MainWorkspace: View {
                     PolicyCenterWorkspaceView()
                 case .tools:
                     ToolCatalogWorkspaceView()
+                case .provider:
+                    CodexProviderWorkspaceView()
                 case .trace:
                     TraceStudioView()
                 case .codex:
@@ -699,15 +706,12 @@ struct DashboardView: View {
     @EnvironmentObject private var model: BridgeModel
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            HStack(alignment: .top, spacing: 12) {
-                StatusGrid()
-                PrimaryActionPanel()
-            }
-
+        VStack(alignment: .leading, spacing: 12) {
+            StatusGrid()
+            PrimaryActionPanel()
             RiskOverviewPanel()
 
-            HStack(alignment: .top, spacing: 16) {
+            HStack(alignment: .top, spacing: 12) {
                 RecentCallsCompactPanel()
                 RuntimePanel()
             }
@@ -719,52 +723,59 @@ struct PrimaryActionPanel: View {
     @EnvironmentObject private var model: BridgeModel
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 12) {
             PanelHeader(title: model.tr("Primary Actions", "主要操作"), symbol: "bolt.fill")
-            Button { Task { await model.startService() } } label: {
-                Label(model.tr("Start", "启动"), systemImage: "play.fill")
-                    .frame(maxWidth: .infinity, alignment: .leading)
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 148), spacing: 8)], alignment: .leading, spacing: 8) {
+                DashboardActionButton(title: model.tr("Start", "启动"), symbol: "play.fill") {
+                    Task { await model.startService() }
+                }
+                .disabled(model.isStarting || model.isOnline)
+                DashboardActionButton(title: model.tr("Stop", "停止"), symbol: "stop.fill") {
+                    Task { await model.stopService() }
+                }
+                .disabled(!model.isOnline)
+                DashboardActionButton(title: model.tr("Restart", "重启"), symbol: "arrow.triangle.2.circlepath") {
+                    Task { await model.restartService() }
+                }
+                DashboardActionButton(title: "Open ChatGPT", symbol: "safari") {
+                    model.openChatGPT()
+                }
+                DashboardActionButton(title: model.tr("Copy URL", "复制 URL"), symbol: "link") {
+                    model.copyConnectorURL()
+                }
+                DashboardActionButton(title: model.tr("Copy Fields", "复制字段"), symbol: "doc.on.clipboard") {
+                    model.copyConnectorNewAppFields()
+                }
+                DashboardActionButton(title: model.tr("Copy Steps", "复制步骤"), symbol: "list.clipboard") {
+                    model.copyConnectorSetupSteps()
+                }
             }
-            .disabled(model.isStarting || model.isOnline)
-            Button { Task { await model.stopService() } } label: {
-                Label(model.tr("Stop", "停止"), systemImage: "stop.fill")
-                    .frame(maxWidth: .infinity, alignment: .leading)
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 210), spacing: 8)], alignment: .leading, spacing: 8) {
+                MiniConnectorField(label: model.tr("Name", "名称"), value: model.suggestedConnectorAppName)
+                MiniConnectorField(label: model.tr("Connection", "连接"), value: model.connectorURL)
+                MiniConnectorField(label: model.tr("Authentication", "认证"), value: model.authModeLabel)
             }
-            .disabled(!model.isOnline)
-            Button { Task { await model.restartService() } } label: {
-                Label(model.tr("Restart", "重启"), systemImage: "arrow.triangle.2.circlepath")
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            }
-            Button { model.openChatGPT() } label: {
-                Label("Open ChatGPT", systemImage: "safari")
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            }
-            Button { model.copyConnectorURL() } label: {
-                Label(model.tr("Copy Connector URL", "复制连接器 URL"), systemImage: "link")
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            }
-            Button { model.copyConnectorNewAppFields() } label: {
-                Label(model.tr("Copy New App Fields", "复制新应用字段"), systemImage: "doc.on.clipboard")
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            }
-            Button { model.copyConnectorSetupSteps() } label: {
-                Label(model.tr("Copy Setup Steps", "复制配置步骤"), systemImage: "list.clipboard")
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            }
-            Divider()
-            MiniConnectorField(label: model.tr("Name", "名称"), value: model.suggestedConnectorAppName)
-            MiniConnectorField(label: model.tr("Connection", "连接"), value: model.connectorURL)
-            MiniConnectorField(label: model.tr("Authentication", "认证"), value: model.authModeLabel)
-            Text(model.connectorUrlDisplay)
-                .font(.system(size: 11, design: .monospaced))
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
-                .truncationMode(.middle)
-                .textSelection(.enabled)
         }
         .padding(14)
-        .frame(width: 240, alignment: .topLeading)
+        .frame(maxWidth: .infinity, alignment: .topLeading)
         .background(PanelBackground())
+    }
+}
+
+struct DashboardActionButton: View {
+    let title: String
+    let symbol: String
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Label(title, systemImage: symbol)
+                .font(.system(size: 12, weight: .semibold))
+                .lineLimit(1)
+                .frame(maxWidth: .infinity, minHeight: 30, alignment: .leading)
+        }
+        .buttonStyle(.bordered)
+        .controlSize(.small)
     }
 }
 
@@ -2206,6 +2217,8 @@ struct TraceStudioView: View {
                 TraceStatPill(title: "Tasks", value: model.traceStats.tasks, symbol: "list.bullet.rectangle", tint: .mint)
             }
 
+            TraceCallAnalyticsPanel(calls: model.connectorActivity.toolCalls)
+
             HStack(alignment: .top, spacing: 12) {
                 TraceTimelineColumn(items: filteredItems, selectedID: $selectedID)
                     .frame(width: 250)
@@ -2306,6 +2319,211 @@ struct TraceSectionedTableColumn: View {
         .padding(14)
         .frame(maxWidth: .infinity, alignment: .topLeading)
         .background(PanelBackground())
+    }
+}
+
+struct TraceCallAnalyticsPanel: View {
+    let calls: [ToolCall]
+
+    private var analytics: ToolCallAnalytics {
+        ToolCallAnalytics(calls: calls)
+    }
+
+    var body: some View {
+        let stats = analytics
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .center, spacing: 10) {
+                PanelHeader(title: "Tool Call Analytics", symbol: "chart.xyaxis.line")
+                Spacer(minLength: 0)
+                ToolBadge(text: "\(stats.totalCalls) total", tint: .blue)
+                ToolBadge(text: "\(stats.uniqueTools) tools", tint: .purple)
+                ToolBadge(text: "\(stats.errorCount) errors", tint: stats.errorCount > 0 ? .red : .green)
+            }
+
+            if stats.totalCalls == 0 {
+                EmptyState(text: "No tool-call statistics yet.")
+            } else {
+                HStack(alignment: .top, spacing: 14) {
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack {
+                            Text("Calls over time")
+                                .font(.system(size: 12, weight: .bold))
+                            Spacer()
+                            Text(stats.rangeLabel)
+                                .font(.system(size: 11, design: .monospaced))
+                                .foregroundStyle(.secondary)
+                        }
+                        ToolCallSparkline(buckets: stats.timeBuckets, tint: .blue)
+                            .frame(height: 92)
+                        HStack {
+                            Text(stats.firstBucketLabel)
+                            Spacer()
+                            Text("peak \(stats.peakBucketCount)")
+                            Spacer()
+                            Text(stats.lastBucketLabel)
+                        }
+                        .font(.system(size: 10, design: .monospaced))
+                        .foregroundStyle(.secondary)
+                    }
+                    .frame(minWidth: 280, maxWidth: .infinity, alignment: .topLeading)
+
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack {
+                            Text("Tool distribution")
+                                .font(.system(size: 12, weight: .bold))
+                            Spacer()
+                            Text("top \(stats.topTools.count)")
+                                .font(.system(size: 11, design: .monospaced))
+                                .foregroundStyle(.secondary)
+                        }
+                        VStack(spacing: 7) {
+                            ForEach(stats.topTools) { item in
+                                ToolCallDistributionRow(item: item, maxCount: stats.maxToolCount)
+                            }
+                        }
+                    }
+                    .frame(minWidth: 300, maxWidth: .infinity, alignment: .topLeading)
+                }
+            }
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .topLeading)
+        .background(PanelBackground())
+    }
+}
+
+struct ToolCallSparkline: View {
+    let buckets: [ToolCallTimeBucket]
+    let tint: Color
+
+    private var maxCount: Int {
+        max(1, buckets.map(\.count).max() ?? 1)
+    }
+
+    var body: some View {
+        GeometryReader { proxy in
+            ZStack(alignment: .bottomLeading) {
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .fill(tint.opacity(0.06))
+                VStack {
+                    Spacer()
+                    Rectangle().fill(Color(nsColor: .separatorColor).opacity(0.45)).frame(height: 1)
+                    Spacer()
+                    Rectangle().fill(Color(nsColor: .separatorColor).opacity(0.3)).frame(height: 1)
+                    Spacer()
+                }
+                ToolCallSparklineFillShape(values: buckets.map(\.count), maxValue: maxCount)
+                    .fill(
+                        LinearGradient(
+                            colors: [tint.opacity(0.18), tint.opacity(0.02)],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        )
+                    )
+                    .padding(10)
+                ToolCallSparklineShape(values: buckets.map(\.count), maxValue: maxCount)
+                    .stroke(tint, style: StrokeStyle(lineWidth: 2.4, lineCap: .round, lineJoin: .round))
+                    .padding(10)
+                HStack(alignment: .bottom, spacing: 4) {
+                    ForEach(buckets) { bucket in
+                        RoundedRectangle(cornerRadius: 2, style: .continuous)
+                            .fill(bucket.count > 0 ? tint.opacity(0.18) : Color.clear)
+                            .frame(height: barHeight(for: bucket.count, in: proxy.size.height - 24))
+                    }
+                }
+                .padding(.horizontal, 10)
+                .padding(.bottom, 10)
+            }
+        }
+    }
+
+    private func barHeight(for count: Int, in availableHeight: CGFloat) -> CGFloat {
+        guard count > 0 else { return 0 }
+        return max(4, CGFloat(count) / CGFloat(maxCount) * max(1, availableHeight))
+    }
+}
+
+struct ToolCallSparklineShape: Shape {
+    let values: [Int]
+    let maxValue: Int
+
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        guard !values.isEmpty else { return path }
+        if values.count == 1 {
+            let y = yPosition(for: values[0], in: rect)
+            path.move(to: CGPoint(x: rect.minX, y: y))
+            path.addLine(to: CGPoint(x: rect.maxX, y: y))
+            return path
+        }
+        for (index, value) in values.enumerated() {
+            let x = rect.minX + CGFloat(index) / CGFloat(values.count - 1) * rect.width
+            let y = yPosition(for: value, in: rect)
+            if index == 0 {
+                path.move(to: CGPoint(x: x, y: y))
+            } else {
+                path.addLine(to: CGPoint(x: x, y: y))
+            }
+        }
+        return path
+    }
+
+    private func yPosition(for value: Int, in rect: CGRect) -> CGFloat {
+        let ratio = CGFloat(value) / CGFloat(max(1, maxValue))
+        return rect.maxY - ratio * rect.height
+    }
+}
+
+struct ToolCallSparklineFillShape: Shape {
+    let values: [Int]
+    let maxValue: Int
+
+    func path(in rect: CGRect) -> Path {
+        var path = ToolCallSparklineShape(values: values, maxValue: maxValue).path(in: rect)
+        guard !values.isEmpty else { return path }
+        path.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY))
+        path.addLine(to: CGPoint(x: rect.minX, y: rect.maxY))
+        path.closeSubpath()
+        return path
+    }
+}
+
+struct ToolCallDistributionRow: View {
+    let item: ToolCallToolCount
+    let maxCount: Int
+
+    private var ratio: CGFloat {
+        CGFloat(item.count) / CGFloat(max(1, maxCount))
+    }
+
+    var body: some View {
+        HStack(spacing: 9) {
+            Text(item.tool)
+                .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                .lineLimit(1)
+                .frame(width: 148, alignment: .leading)
+                .textSelection(.enabled)
+            GeometryReader { proxy in
+                ZStack(alignment: .leading) {
+                    RoundedRectangle(cornerRadius: 4, style: .continuous)
+                        .fill(Color(nsColor: .controlBackgroundColor))
+                    RoundedRectangle(cornerRadius: 4, style: .continuous)
+                        .fill(item.tint.opacity(0.22))
+                        .frame(width: max(4, proxy.size.width * ratio))
+                }
+            }
+            .frame(height: 10)
+            Text("\(item.count)")
+                .font(.system(size: 11, weight: .bold, design: .monospaced))
+                .frame(width: 36, alignment: .trailing)
+            if item.errorCount > 0 {
+                ToolBadge(text: "\(item.errorCount) err", tint: .red)
+                    .frame(width: 52, alignment: .trailing)
+            } else {
+                Text("")
+                    .frame(width: 52)
+            }
+        }
     }
 }
 
@@ -2463,7 +2681,7 @@ struct InspectorBlock: View {
             Text(value.isEmpty ? "-" : value)
                 .font(.system(size: 11, design: .monospaced))
                 .textSelection(.enabled)
-                .lineLimit(8)
+                .lineLimit(18)
                 .padding(8)
                 .frame(maxWidth: .infinity, alignment: .topLeading)
                 .background(Color(nsColor: .controlBackgroundColor))
@@ -2474,18 +2692,70 @@ struct InspectorBlock: View {
 
 struct CodexRunnerView: View {
     @EnvironmentObject private var model: BridgeModel
+    @State private var selectedTaskID: String?
+
+    private var selectedTask: CodexTaskRecord? {
+        if let selectedTaskID, let task = model.codexTasks.first(where: { $0.id == selectedTaskID }) {
+            return task
+        }
+        return model.codexTasks.first
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
+            CodexRunnerRiskBanner(task: selectedTask)
             HStack(alignment: .top, spacing: 16) {
-                CodexPromptPanel()
-                CodexQueuePanel(tasks: model.codexTasks)
+                CodexQueuePanel(tasks: model.codexTasks, selectedTaskID: $selectedTaskID)
+                    .frame(minWidth: 300, idealWidth: 340, maxWidth: 380)
+                CodexLogPanel(task: selectedTask)
             }
-            HStack(alignment: .top, spacing: 16) {
-                CodexLogPanel(tasks: model.codexTasks)
-                CodexResultPanel(tasks: model.codexTasks)
+            CodexResultPanel(task: selectedTask)
+            CodexPromptPanel()
+        }
+        .onChange(of: model.codexTasks.map(\.id)) { _, ids in
+            if selectedTaskID == nil || !ids.contains(selectedTaskID ?? "") {
+                selectedTaskID = ids.first
             }
         }
+    }
+}
+
+struct CodexRunnerRiskBanner: View {
+    let task: CodexTaskRecord?
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 12) {
+            Image(systemName: task?.usesFullAccess == true ? "exclamationmark.shield.fill" : "shield.lefthalf.filled")
+                .font(.system(size: 18, weight: .bold))
+                .foregroundStyle(task?.usesFullAccess == true ? .orange : .green)
+                .frame(width: 24)
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Codex Runner safety boundary")
+                    .font(.system(size: 13, weight: .bold))
+                Text(task?.usesFullAccess == true
+                     ? "This runner uses Codex CLI full access. The boundary comes from bridge.policy.json, the handoff package, task timeout, audit logs, and visible App trace."
+                     : "Runner tasks are scoped by approved project roots, handoff constraints, timeout, audit logs, and App trace.")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer(minLength: 0)
+            if let task {
+                VStack(alignment: .trailing, spacing: 4) {
+                    ToolBadge(text: task.status, tint: task.statusTint)
+                    if let handoffLabel = task.handoffLabel {
+                        Text(handoffLabel)
+                            .font(.system(size: 10, design: .monospaced))
+                            .foregroundStyle(task.handoffRiskTint)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                    }
+                }
+            }
+        }
+        .padding(14)
+        .background((task?.usesFullAccess == true ? Color.orange : Color.green).opacity(0.08))
+        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
     }
 }
 
@@ -2510,6 +2780,7 @@ struct CodexPromptPanel: View {
 
 struct CodexQueuePanel: View {
     let tasks: [CodexTaskRecord]
+    @Binding var selectedTaskID: String?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -2518,7 +2789,11 @@ struct CodexQueuePanel: View {
                 EmptyState(text: "No Codex Runner jobs recorded yet.")
             } else {
                 ForEach(tasks.prefix(8)) { task in
-                    CodexTaskRow(task: task)
+                    CodexTaskRow(task: task, selected: task.id == selectedTaskID)
+                        .contentShape(Rectangle())
+                        .onTapGesture {
+                            selectedTaskID = task.id
+                        }
                 }
             }
             HStack(spacing: 8) {
@@ -2536,6 +2811,7 @@ struct CodexQueuePanel: View {
 
 struct CodexTaskRow: View {
     let task: CodexTaskRecord
+    let selected: Bool
 
     var body: some View {
         HStack(alignment: .top, spacing: 10) {
@@ -2558,13 +2834,24 @@ struct CodexTaskRow: View {
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
                     .truncationMode(.middle)
+                if let handoffLabel = task.handoffLabel {
+                    Text(handoffLabel)
+                        .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                        .foregroundStyle(task.handoffRiskTint)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                }
                 Text(task.timeText)
                     .font(.system(size: 10, design: .monospaced))
                     .foregroundStyle(.secondary)
             }
         }
         .padding(10)
-        .background(Color(nsColor: .controlBackgroundColor))
+        .background(selected ? task.statusTint.opacity(0.12) : Color(nsColor: .controlBackgroundColor))
+        .overlay(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .stroke(selected ? task.statusTint.opacity(0.45) : Color.clear, lineWidth: 1)
+        )
         .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
     }
 }
@@ -2587,23 +2874,27 @@ struct QueueStatePill: View {
 
 struct CodexLogPanel: View {
     @EnvironmentObject private var model: BridgeModel
-    let tasks: [CodexTaskRecord]
-
-    private var selectedTask: CodexTaskRecord? {
-        tasks.first
-    }
+    let task: CodexTaskRecord?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            PanelHeader(title: "Live Logs", symbol: "terminal")
-            Text(model.codexLogPreview(for: selectedTask))
-                .font(.system(size: 11, design: .monospaced))
-                .foregroundStyle(.secondary)
-                .textSelection(.enabled)
-                .padding(10)
-                .frame(maxWidth: .infinity, minHeight: 180, alignment: .topLeading)
-                .background(Color(nsColor: .controlBackgroundColor))
-                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+            HStack {
+                PanelHeader(title: "Live Logs", symbol: "terminal")
+                Spacer()
+                Button { model.copyCodexLog(for: task) } label: { Label("Copy log", systemImage: "doc.on.clipboard") }
+                Button { model.openCodexLog(for: task) } label: { Label("Open", systemImage: "folder") }
+                    .disabled(task?.logFile == nil)
+            }
+            ScrollView {
+                Text(model.codexLogPreview(for: task))
+                    .font(.system(size: 11, design: .monospaced))
+                    .foregroundStyle(.secondary)
+                    .textSelection(.enabled)
+                    .padding(10)
+                    .frame(maxWidth: .infinity, minHeight: 260, alignment: .topLeading)
+            }
+            .background(Color(nsColor: .controlBackgroundColor))
+            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
         }
         .padding(14)
         .frame(maxWidth: .infinity, alignment: .topLeading)
@@ -2613,30 +2904,158 @@ struct CodexLogPanel: View {
 
 struct CodexResultPanel: View {
     @EnvironmentObject private var model: BridgeModel
-    let tasks: [CodexTaskRecord]
-
-    private var selectedTask: CodexTaskRecord? {
-        tasks.first
-    }
+    let task: CodexTaskRecord?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            PanelHeader(title: "Result Preview", symbol: "doc.text.magnifyingglass")
-            InspectorBlock(title: "Changed files", value: selectedTask?.changedFileSummary ?? "No changed-file summary yet.")
-            InspectorBlock(title: "Diff preview", value: selectedTask?.diffPreview?.nilIfEmpty ?? "Diff preview will appear here when codex.result returns a patch summary.")
-            InspectorBlock(title: "Test result", value: selectedTask?.testResult?.nilIfEmpty ?? "Test result will be attached to completed Codex Runner jobs.")
-            Button {
-                if let selectedTask {
-                    model.cancelCodexTask(selectedTask)
+            HStack {
+                PanelHeader(title: "Result Console", symbol: "doc.text.magnifyingglass")
+                Spacer()
+                Button { model.copyCodexTaskSummary(task) } label: { Label("Copy result", systemImage: "doc.on.clipboard") }
+                    .disabled(task == nil)
+                Button {
+                    if let task {
+                        model.cancelCodexTask(task)
+                    }
+                } label: {
+                    Label("Cancel", systemImage: "xmark.circle.fill")
                 }
-            } label: {
-                Label("Cancel selected task", systemImage: "xmark.circle.fill")
+                .foregroundStyle(.red)
+                .disabled(task?.isRunning != true)
             }
-            .disabled(selectedTask?.isRunning != true)
+            LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
+                if let task, let handoffSummary = task.handoffSummary {
+                    InspectorBlock(title: "Handoff", value: handoffSummary)
+                }
+                InspectorBlock(title: "Changed files", value: task?.changedFileSummary ?? "No changed-file summary yet.")
+                InspectorBlock(title: "Diff preview", value: task?.diffPreview?.nilIfEmpty ?? "Diff preview will appear here when codex.result returns a patch summary.")
+                InspectorBlock(title: "Test result", value: task?.testResult?.nilIfEmpty ?? "Test result will be attached to completed Codex Runner jobs.")
+            }
         }
         .padding(14)
         .frame(maxWidth: .infinity, alignment: .topLeading)
         .background(PanelBackground())
+    }
+}
+
+struct CodexProviderWorkspaceView: View {
+    @EnvironmentObject private var model: BridgeModel
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            HStack(alignment: .top, spacing: 16) {
+                CodexProviderSettingsPanel()
+                CodexProviderStatusPanel()
+            }
+            CodexProviderHelpPanel()
+        }
+    }
+}
+
+struct CodexProviderSettingsPanel: View {
+    @EnvironmentObject private var model: BridgeModel
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            PanelHeader(title: "Codex Provider Profile", symbol: "server.rack")
+            Picker("Provider", selection: $model.codexProviderKind) {
+                ForEach(CodexProviderKind.allCases) { provider in
+                    Text(provider.title).tag(provider)
+                }
+            }
+            .pickerStyle(.segmented)
+
+            Text(model.codexProviderKind.note)
+                .font(.system(size: 11))
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            ConnectorEditableField(label: "Base URL", text: $model.codexProviderBaseURL)
+            ConnectorEditableField(label: "Model", text: $model.codexProviderModel)
+            ConnectorEditableField(label: "Codex profile", text: $model.codexProviderProfile)
+            ConnectorEditableField(label: "CODEX_HOME", text: $model.codexProviderHome)
+            ConnectorEditableField(label: "API key env", text: $model.codexProviderAPIKeyEnv)
+
+            HStack(spacing: 8) {
+                Button { model.saveCodexProvider() } label: {
+                    Label("Save profile", systemImage: "square.and.arrow.down")
+                }
+                Button { model.copyCodexProviderEnv() } label: {
+                    Label("Copy env", systemImage: "doc.on.clipboard")
+                }
+                Button { Task { await model.restartService() } } label: {
+                    Label("Restart bridge", systemImage: "arrow.triangle.2.circlepath")
+                }
+                Spacer()
+            }
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .topLeading)
+        .background(PanelBackground())
+    }
+}
+
+struct CodexProviderStatusPanel: View {
+    @EnvironmentObject private var model: BridgeModel
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            PanelHeader(title: "Runtime Preview", symbol: "checklist")
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 150), spacing: 10)], alignment: .leading, spacing: 10) {
+                InlineInspectorMetric(label: "Provider", value: model.codexProviderKind.runtimeValue, symbol: "server.rack", tint: .mint)
+                InlineInspectorMetric(label: "Base URL", value: model.codexProviderBaseURL.nilIfEmpty ?? "default Codex", symbol: "globe", tint: model.codexProviderBaseURL.isEmpty ? .secondary : .blue)
+                InlineInspectorMetric(label: "Model", value: model.codexProviderModel.nilIfEmpty ?? "Codex default", symbol: "cpu", tint: .purple)
+                InlineInspectorMetric(label: "API key env", value: model.codexProviderAPIKeyEnv.nilIfEmpty ?? "OPENAI_API_KEY", symbol: "key.fill", tint: .orange)
+            }
+            InspectorBlock(title: "Environment passed to Codex Runner", value: model.codexProviderEnvText)
+            Text("Secrets are not stored here. Put the real API key in your shell, launchd plist, or local secrets manager under the env name above.")
+                .font(.system(size: 11))
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .topLeading)
+        .background(PanelBackground())
+    }
+}
+
+struct CodexProviderHelpPanel: View {
+    @EnvironmentObject private var model: BridgeModel
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            PanelHeader(title: "Recommended use", symbol: "lightbulb.fill")
+            HStack(alignment: .top, spacing: 12) {
+                ProviderHintCard(title: "Official", text: "Use this when Codex CLI is already logged in. It is the least moving parts.", tint: .green)
+                ProviderHintCard(title: "API", text: "Use OpenAI-compatible endpoints by setting Base URL and API key env.", tint: .blue)
+                ProviderHintCard(title: "sub2api", text: "Run sub2api separately, then point Base URL at its /v1 endpoint.", tint: .mint)
+            }
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .topLeading)
+        .background(PanelBackground())
+    }
+}
+
+struct ProviderHintCard: View {
+    let title: String
+    let text: String
+    let tint: Color
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(title)
+                .font(.system(size: 12, weight: .bold))
+                .foregroundStyle(tint)
+            Text(text)
+                .font(.system(size: 11))
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .topLeading)
+        .background(tint.opacity(0.08))
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
     }
 }
 
@@ -2783,9 +3202,9 @@ struct StatusGrid: View {
 
     var body: some View {
         LazyVGrid(
-            columns: [GridItem(.adaptive(minimum: 132), spacing: 10, alignment: .top)],
+            columns: [GridItem(.adaptive(minimum: 150), spacing: 8, alignment: .top)],
             alignment: .leading,
-            spacing: 10
+            spacing: 8
         ) {
             MetricTile(
                 title: model.tr("Service", "服务"),
@@ -2841,27 +3260,34 @@ struct MetricTile: View {
     let symbol: String
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack {
-                Text(title.uppercased())
-                    .font(.system(size: 11, weight: .bold))
-                    .foregroundStyle(.secondary)
-                Spacer()
+        HStack(alignment: .center, spacing: 10) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 7, style: .continuous)
+                    .fill(tint.opacity(0.12))
+                    .frame(width: 30, height: 30)
                 Image(systemName: symbol)
+                    .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(tint)
             }
-            Text(value)
-                .font(.system(size: value.count > 14 ? 15 : 26, weight: .bold, design: value.count > 14 ? .monospaced : .default))
-                .lineLimit(1)
-                .minimumScaleFactor(0.78)
-            Text(note)
-                .font(.system(size: 12))
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
-                .truncationMode(.middle)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(title.uppercased())
+                    .font(.system(size: 9, weight: .bold))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                Text(value)
+                    .font(.system(size: value.count > 14 ? 13 : 20, weight: .bold, design: value.count > 14 ? .monospaced : .default))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.72)
+                Text(note)
+                    .font(.system(size: 10))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                    .help(note)
+            }
         }
-        .padding(14)
-        .frame(maxWidth: .infinity, minHeight: 112, alignment: .leading)
+        .padding(10)
+        .frame(maxWidth: .infinity, minHeight: 70, alignment: .leading)
         .background(PanelBackground())
     }
 }
@@ -3678,6 +4104,12 @@ final class BridgeModel: ObservableObject {
     @Published var connectorMachines: [ConnectorMachineProfile] = []
     @Published var selectedConnectorMachineID = ""
     @Published var language: AppLanguage = .en
+    @Published var codexProviderKind: CodexProviderKind = .official
+    @Published var codexProviderBaseURL = ""
+    @Published var codexProviderModel = ""
+    @Published var codexProviderProfile = ""
+    @Published var codexProviderHome = ""
+    @Published var codexProviderAPIKeyEnv = "OPENAI_API_KEY"
 
     let port = ProcessInfo.processInfo.environment["LOCALBRIDGE_PORT"] ?? "3842"
     let connectorDataDir: URL
@@ -3688,6 +4120,7 @@ final class BridgeModel: ObservableObject {
     let toolProfilePath: URL
     let languagePath: URL
     let machinesPath: URL
+    let providerPath: URL
     let pidPath: URL
     let enginePath: String
 
@@ -3704,6 +4137,7 @@ final class BridgeModel: ObservableObject {
         toolProfilePath = dataDir.appendingPathComponent("tool-profile")
         languagePath = dataDir.appendingPathComponent("app-language")
         machinesPath = dataDir.appendingPathComponent("machines.json")
+        providerPath = dataDir.appendingPathComponent("codex-provider.json")
         pidPath = dataDir.appendingPathComponent("bridge-rs.pid")
         enginePath = Bundle.main.path(forResource: "chatgpt2localbridge-rs", ofType: nil) ?? ""
     }
@@ -3713,6 +4147,7 @@ final class BridgeModel: ObservableObject {
             try ensureLocalFiles()
             loadLanguage()
             loadToolProfile()
+            loadCodexProvider()
             loadConnectorMachines()
             loadToolCatalog()
             refreshConnectorActivity()
@@ -4222,6 +4657,42 @@ final class BridgeModel: ObservableObject {
         }
     }
 
+    func saveCodexProvider() {
+        do {
+            try FileManager.default.createDirectory(at: dataDir, withIntermediateDirectories: true)
+            let document = CodexProviderDocument(
+                kind: codexProviderKind,
+                baseURL: codexProviderBaseURL.trimmingCharacters(in: .whitespacesAndNewlines),
+                model: codexProviderModel.trimmingCharacters(in: .whitespacesAndNewlines),
+                profile: codexProviderProfile.trimmingCharacters(in: .whitespacesAndNewlines),
+                codexHome: codexProviderHome.trimmingCharacters(in: .whitespacesAndNewlines),
+                apiKeyEnv: codexProviderAPIKeyEnv.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty ?? "OPENAI_API_KEY"
+            )
+            let encoder = JSONEncoder()
+            encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+            try encoder.encode(document).write(to: providerPath, options: [.atomic])
+            try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: providerPath.path)
+            lastError = isOnline ? "Restart required to apply Codex provider settings" : nil
+        } catch {
+            lastError = "Failed to save Codex provider: \(error.localizedDescription)"
+        }
+    }
+
+    private func loadCodexProvider() {
+        guard let data = try? Data(contentsOf: providerPath),
+              let document = try? JSONDecoder().decode(CodexProviderDocument.self, from: data) else {
+            codexProviderKind = .official
+            codexProviderAPIKeyEnv = "OPENAI_API_KEY"
+            return
+        }
+        codexProviderKind = document.kind
+        codexProviderBaseURL = document.baseURL
+        codexProviderModel = document.model
+        codexProviderProfile = document.profile
+        codexProviderHome = document.codexHome
+        codexProviderAPIKeyEnv = document.apiKeyEnv.isEmpty ? "OPENAI_API_KEY" : document.apiKeyEnv
+    }
+
     private func loadConnectorMachines() {
         if let data = try? Data(contentsOf: machinesPath),
            let document = try? JSONDecoder().decode(ConnectorMachinesDocument.self, from: data),
@@ -4348,6 +4819,27 @@ final class BridgeModel: ObservableObject {
 
         完成后调用 codex.status / codex.result，并总结 changed files、diff preview、test result。
         """
+    }
+
+    var codexProviderEnvText: String {
+        var lines = [
+            "LOCALBRIDGE_CODEX_PROVIDER=\(codexProviderKind.runtimeValue)",
+            "LOCALBRIDGE_CODEX_API_KEY_ENV=\(codexProviderAPIKeyEnv.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty ?? "OPENAI_API_KEY")"
+        ]
+        if let value = codexProviderBaseURL.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty {
+            lines.append("LOCALBRIDGE_CODEX_BASE_URL=\(value)")
+        }
+        if let value = codexProviderModel.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty {
+            lines.append("LOCALBRIDGE_CODEX_MODEL=\(value)")
+        }
+        if let value = codexProviderProfile.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty {
+            lines.append("LOCALBRIDGE_CODEX_PROFILE=\(value)")
+        }
+        if let value = codexProviderHome.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty {
+            lines.append("LOCALBRIDGE_CODEX_HOME=\(value)")
+        }
+        lines.append("# Set \(codexProviderAPIKeyEnv.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty ?? "OPENAI_API_KEY") separately; do not paste secrets into ChatGPT.")
+        return lines.joined(separator: "\n")
     }
 
     var riskAlerts: [RiskAlert] {
@@ -4508,6 +5000,11 @@ final class BridgeModel: ObservableObject {
         NSPasteboard.general.setString(codexRunnerPrompt, forType: .string)
     }
 
+    func copyCodexProviderEnv() {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(codexProviderEnvText, forType: .string)
+    }
+
     func codexLogPreview(for task: CodexTaskRecord?) -> String {
         guard let task else {
             return "No Codex Runner jobs recorded yet."
@@ -4519,6 +5016,22 @@ final class BridgeModel: ObservableObject {
             return "Waiting for Codex Runner log output..."
         }
         return String(raw.suffix(6000))
+    }
+
+    func copyCodexLog(for task: CodexTaskRecord?) {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(codexLogPreview(for: task), forType: .string)
+    }
+
+    func openCodexLog(for task: CodexTaskRecord?) {
+        guard let path = task?.logFile, !path.isEmpty else { return }
+        NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: path)])
+    }
+
+    func copyCodexTaskSummary(_ task: CodexTaskRecord?) {
+        guard let task else { return }
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(task.chatGPTReadySummary, forType: .string)
     }
 
     func cancelCodexTask(_ task: CodexTaskRecord) {
@@ -4566,6 +5079,20 @@ final class BridgeModel: ObservableObject {
             environment["LOCALBRIDGE_DASHBOARD_TOKEN"] = token
             environment["LOCALBRIDGE_OAUTH_ENABLED"] = ProcessInfo.processInfo.environment["LOCALBRIDGE_OAUTH_ENABLED"] ?? "0"
             environment["LOCALBRIDGE_TOOL_PROFILE"] = toolProfile.runtimeValue
+            environment["LOCALBRIDGE_CODEX_PROVIDER"] = codexProviderKind.runtimeValue
+            environment["LOCALBRIDGE_CODEX_API_KEY_ENV"] = codexProviderAPIKeyEnv.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty ?? "OPENAI_API_KEY"
+            if !codexProviderBaseURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                environment["LOCALBRIDGE_CODEX_BASE_URL"] = codexProviderBaseURL.trimmingCharacters(in: .whitespacesAndNewlines)
+            }
+            if !codexProviderModel.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                environment["LOCALBRIDGE_CODEX_MODEL"] = codexProviderModel.trimmingCharacters(in: .whitespacesAndNewlines)
+            }
+            if !codexProviderProfile.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                environment["LOCALBRIDGE_CODEX_PROFILE"] = codexProviderProfile.trimmingCharacters(in: .whitespacesAndNewlines)
+            }
+            if !codexProviderHome.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                environment["LOCALBRIDGE_CODEX_HOME"] = codexProviderHome.trimmingCharacters(in: .whitespacesAndNewlines)
+            }
             environment["PATH"] = environment["PATH"] ?? "/usr/bin:/bin:/usr/sbin:/sbin"
             process.environment = environment
 
@@ -5363,6 +5890,65 @@ enum ToolProfile: String, CaseIterable, Identifiable {
     }
 }
 
+enum CodexProviderKind: String, CaseIterable, Identifiable, Codable {
+    case official
+    case openaiCompatible
+    case sub2api
+
+    var id: String { rawValue }
+
+    var runtimeValue: String {
+        switch self {
+        case .official: return "official"
+        case .openaiCompatible: return "openai-compatible"
+        case .sub2api: return "sub2api"
+        }
+    }
+
+    var title: String {
+        switch self {
+        case .official: return "Official Codex login"
+        case .openaiCompatible: return "OpenAI-compatible API"
+        case .sub2api: return "sub2api endpoint"
+        }
+    }
+
+    var note: String {
+        switch self {
+        case .official:
+            return "Use the normal Codex CLI account and local Codex config."
+        case .openaiCompatible:
+            return "Inject OPENAI_BASE_URL and a local API key env variable for Codex Runner."
+        case .sub2api:
+            return "Point Codex Runner at a sub2api-compatible local or LAN API gateway."
+        }
+    }
+
+    init(from decoder: Decoder) throws {
+        let raw = try decoder.singleValueContainer().decode(String.self)
+        switch raw {
+        case "official": self = .official
+        case "openai-compatible", "openaiCompatible": self = .openaiCompatible
+        case "sub2api": self = .sub2api
+        default: self = .official
+        }
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.singleValueContainer()
+        try container.encode(runtimeValue)
+    }
+}
+
+struct CodexProviderDocument: Codable {
+    let kind: CodexProviderKind
+    let baseURL: String
+    let model: String
+    let profile: String
+    let codexHome: String
+    let apiKeyEnv: String
+}
+
 struct ToolExposure {
     let isEnabled: Bool
     let stateLabel: String
@@ -5655,6 +6241,9 @@ struct CodexTaskRecord: Decodable, Identifiable {
     let pid: Int?
     let logFile: String?
     let resultFile: String?
+    let handoffId: String?
+    let handoffFile: String?
+    let handoff: CodexHandoffRecord?
     let exitCode: Int?
     let signal: String?
     let startedAt: String?
@@ -5693,6 +6282,40 @@ struct CodexTaskRecord: Decodable, Identifiable {
         return .blue
     }
 
+    var handoffLabel: String? {
+        guard let handoffId, !handoffId.isEmpty else { return nil }
+        let risk = handoff?.riskLevel ?? "risk?"
+        return "\(handoffId) / \(risk)"
+    }
+
+    var handoffRiskTint: Color {
+        switch handoff?.riskLevel {
+        case "low": return .green
+        case "medium": return .orange
+        case "high": return .red
+        default: return .secondary
+        }
+    }
+
+    var handoffSummary: String? {
+        guard let handoff else {
+            guard let handoffId, !handoffId.isEmpty else { return nil }
+            return "id: \(handoffId)\nfile: \(handoffFile ?? "-")"
+        }
+        var lines = [
+            "id: \(handoff.id)",
+            "risk: \(handoff.riskLevel)",
+            "objective: \(handoff.objective)",
+        ]
+        if !handoff.allowedOperations.isEmpty {
+            lines.append("operations: \(handoff.allowedOperations.joined(separator: ", "))")
+        }
+        if !handoff.expectedArtifacts.isEmpty {
+            lines.append("artifacts: \(handoff.expectedArtifacts.joined(separator: ", "))")
+        }
+        return lines.joined(separator: "\n")
+    }
+
     var sortKey: Date {
         parseTraceDate(updatedAt.isEmpty ? createdAt : updatedAt)
     }
@@ -5713,11 +6336,63 @@ struct CodexTaskRecord: Decodable, Identifiable {
             "\(file.status) \(file.path) +\(file.insertions) -\(file.deletions)"
         }.joined(separator: "\n")
     }
+
+    var usesFullAccess: Bool {
+        command?.contains("--sandbox danger-full-access") == true
+            || command?.contains("--dangerously-bypass-approvals-and-sandbox") == true
+    }
+
+    var chatGPTReadySummary: String {
+        var lines = [
+            "Codex Runner task: \(title)",
+            "taskId: \(id)",
+            "status: \(status)",
+        ]
+        if let handoffId, !handoffId.isEmpty {
+            lines.append("handoffId: \(handoffId)")
+        }
+        if usesFullAccess {
+            lines.append("runnerMode: danger-full-access; boundary = bridge.policy + handoff + timeout + trace")
+        }
+        if let projectPath, !projectPath.isEmpty {
+            lines.append("projectPath: \(projectPath)")
+        }
+        if let changedFiles, !changedFiles.isEmpty {
+            lines.append("\nChanged files:")
+            lines.append(contentsOf: changedFiles.map { "- \($0.status) \($0.path) +\($0.insertions) -\($0.deletions)" })
+        }
+        if let diffPreview = diffPreview?.nilIfEmpty {
+            lines.append("\nDiff preview:\n\(diffPreview)")
+        }
+        if let testResult = testResult?.nilIfEmpty {
+            lines.append("\nTest result:\n\(testResult)")
+        }
+        return lines.joined(separator: "\n")
+    }
 }
 
 struct CodexTaskNote: Decodable {
     let ts: String
     let text: String
+}
+
+struct CodexHandoffRecord: Decodable {
+    let version: String
+    let id: String
+    let title: String
+    let objective: String
+    let projectPath: String
+    let workspace: String?
+    let constraints: [String]
+    let allowedOperations: [String]
+    let testCommands: [String]
+    let expectedArtifacts: [String]
+    let riskLevel: String
+    let acceptanceCriteria: [String]
+    let skillContext: [String]
+    let notes: String?
+    let createdAt: String
+    let updatedAt: String
 }
 
 struct CodexChangedFile: Decodable {
@@ -5923,6 +6598,141 @@ struct TraceStats {
         sessions = Set(items.compactMap(\.sessionId).filter { !$0.isEmpty }).count
         tasks = Set(items.map(\.taskId).filter { !$0.isEmpty }).count
         projects = Set(items.map(\.projectPath).filter { !$0.isEmpty }).count
+    }
+}
+
+struct ToolCallAnalytics {
+    let totalCalls: Int
+    let uniqueTools: Int
+    let errorCount: Int
+    let timeBuckets: [ToolCallTimeBucket]
+    let topTools: [ToolCallToolCount]
+    let rangeLabel: String
+    let firstBucketLabel: String
+    let lastBucketLabel: String
+
+    var peakBucketCount: Int {
+        timeBuckets.map(\.count).max() ?? 0
+    }
+
+    var maxToolCount: Int {
+        topTools.map(\.count).max() ?? 1
+    }
+
+    init(calls: [ToolCall]) {
+        let parsed = calls
+            .map { call in (call, parseTraceDate(call.ts)) }
+            .filter { $0.1.timeIntervalSince1970 > 0 }
+            .sorted { $0.1 < $1.1 }
+        totalCalls = calls.count
+        uniqueTools = Set(calls.map(\.tool)).count
+        errorCount = calls.filter { $0.status == "error" }.count
+
+        if parsed.isEmpty {
+            timeBuckets = ToolCallAnalytics.emptyBuckets(count: 12)
+            topTools = []
+            rangeLabel = "no dated calls"
+            firstBucketLabel = "-"
+            lastBucketLabel = "-"
+            return
+        }
+
+        let dates = parsed.map(\.1)
+        let start = dates.first ?? Date()
+        let end = dates.last ?? start
+        let bucketCount = 12
+        let span = max(end.timeIntervalSince(start), Double(bucketCount))
+        let step = span / Double(bucketCount)
+        var counts = Array(repeating: 0, count: bucketCount)
+
+        for (_, date) in parsed {
+            let offset = date.timeIntervalSince(start)
+            let index = min(bucketCount - 1, max(0, Int(offset / step)))
+            counts[index] += 1
+        }
+
+        timeBuckets = counts.enumerated().map { index, count in
+            let bucketStart = start.addingTimeInterval(Double(index) * step)
+            let bucketEnd = start.addingTimeInterval(Double(index + 1) * step)
+            return ToolCallTimeBucket(
+                index: index,
+                count: count,
+                start: bucketStart,
+                end: bucketEnd
+            )
+        }
+
+        var grouped: [String: [ToolCall]] = [:]
+        for call in calls {
+            grouped[call.tool, default: []].append(call)
+        }
+        topTools = grouped
+            .map { tool, values in
+                ToolCallToolCount(
+                    tool: tool,
+                    count: values.count,
+                    errorCount: values.filter { $0.status == "error" }.count
+                )
+            }
+            .sorted {
+                if $0.count == $1.count { return $0.tool < $1.tool }
+                return $0.count > $1.count
+            }
+            .prefix(8)
+            .map { $0 }
+
+        rangeLabel = "\(Self.shortDateTime(start)) - \(Self.shortDateTime(end))"
+        firstBucketLabel = Self.shortTime(start)
+        lastBucketLabel = Self.shortTime(end)
+    }
+
+    private static func emptyBuckets(count: Int) -> [ToolCallTimeBucket] {
+        (0..<count).map { index in
+            ToolCallTimeBucket(index: index, count: 0, start: Date(timeIntervalSince1970: 0), end: Date(timeIntervalSince1970: 0))
+        }
+    }
+
+    private static func shortTime(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "HH:mm"
+        return formatter.string(from: date)
+    }
+
+    private static func shortDateTime(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        if Calendar.current.isDateInToday(date) {
+            formatter.dateFormat = "HH:mm"
+        } else {
+            formatter.dateFormat = "MM-dd HH:mm"
+        }
+        return formatter.string(from: date)
+    }
+}
+
+struct ToolCallTimeBucket: Identifiable {
+    let index: Int
+    let count: Int
+    let start: Date
+    let end: Date
+
+    var id: Int { index }
+}
+
+struct ToolCallToolCount: Identifiable {
+    let tool: String
+    let count: Int
+    let errorCount: Int
+
+    var id: String { tool }
+
+    var tint: Color {
+        if errorCount > 0 { return .red }
+        if tool.hasPrefix("codex.") { return .purple }
+        if tool.hasPrefix("file") || tool.hasPrefix("local") { return .blue }
+        if tool.hasPrefix("policy") { return .indigo }
+        if tool.hasPrefix("bridge") { return .teal }
+        if tool.hasPrefix("cloud") { return .green }
+        return .orange
     }
 }
 

@@ -15,13 +15,13 @@ npm run -s build && npm run -s test
 Observed public-safe result summary:
 
 ```text
-[test] normal tools ok (50)
-[test] chatgpt-app tools ok (10)
+[test] normal tools ok (55)
+[test] chatgpt-app tools ok (14)
 [test] chatgpt-app file_write ok
 [test] chatgpt-app local_write_file ok
 [test] chatgpt-app local_workspace_action write_file ok
-[test] debug tools ok (64)
-[test] codex-only tools ok (14)
+[test] debug tools ok (69)
+[test] codex-only tools ok (15)
 [test] cloud download write ok
 [test] oauth metadata ok
 [test] ok
@@ -45,8 +45,18 @@ an OAuth custom connector. The useful troubleshooting finding was:
 
 - An older connector instance could cache only four tools:
   `bridge_health`, `file_list`, `file_read_path`, and `policy_read`.
-- Recreating the connector after the tool profile update exposes the intended
-  `chatgpt-app` profile surface, currently ten tools.
+- Recreating the connector after the tool profile update and using a fresh v3
+  connector schema exposes the intended high-level runner surface.
+- Verified ChatGPT-side action discovery for `attachlocal2chatgpt-v3` includes
+  `handoff_create`, `codex_task_start`, `codex_status`, and `codex_result`.
+- One field run confirmed that `handoff_create` can create the handoff and
+  `codex_task_start` can create a task, but the task failed with
+  `spawn codex ENOENT` when the background service could not find the local
+  Codex CLI. The fix is to set `LOCALBRIDGE_CODEX_BIN` or install Codex in a
+  service-visible bin directory.
+- `codex.result` / `codex_result` now return a compact summary by default. Full
+  logs and diffs are opt-in because hosted ChatGPT safety checks can block large
+  execution records.
 - Read calls and write smoke tests are tracked in the local app trace view.
 - Write behavior is separately verified by
   [`CHATGPT_WRITE_TEST.md`](./CHATGPT_WRITE_TEST.md), a harmless Markdown file
@@ -80,9 +90,16 @@ an OAuth custom connector. The useful troubleshooting finding was:
 ## Public-Safe Evidence Included In Repo
 
 - `assets/mcp-tools.json`: generated ChatGPT-visible MCP tool catalog.
+- `docs/assets/evidence/chatgpt-v3-codex-runner-tools.svg`: sanitized evidence
+  card showing the v3 ChatGPT connector action list with handoff and Codex
+  Runner tools visible.
 - `docs/CHATGPT_WRITE_TEST.md`: harmless write smoke-test artifact.
 - `question/understanding.md`: public troubleshooting explanation of why write
   tools were missing before the profile update.
 - `docs/assets/xhs-promo.png`: shareable Xiaohongshu-style product card.
 - `docs/assets/xhs-community.png`: shareable community/PR card with Linux todo.
 - `docs/assets/xhs-mobile-remote.png`: shareable mobile workflow card.
+- `docs/promo/mobile-codex-runner.md`: mobile-first Xiaohongshu / WeChat copy
+  for "phone ChatGPT delegates to local Codex CLI".
+- `docs/assets/app_screenshots/`: real app and ChatGPT screenshots captured
+  with `scripts/mac-screenshot.sh`.

@@ -68,6 +68,12 @@ jobs:
         run: |
           mkdir -p release
           ditto -c -k --keepParent build/macos/ChatGPT2LocalBridge.app "release/ChatGPT2LocalBridge-macos-${{ runner.arch }}.app.zip"
+          hdiutil create \
+            -volname "ChatGPT2LocalBridge" \
+            -srcfolder build/macos/ChatGPT2LocalBridge.app \
+            -ov \
+            -format UDZO \
+            "release/ChatGPT2LocalBridge-macos-${{ runner.arch }}.dmg"
           cp rust/chatgpt2localbridge-rs/target/release/chatgpt2localbridge-rs "release/chatgpt2localbridge-rs-macos-${{ runner.arch }}"
           (cd release && shasum -a 256 * > SHA256SUMS.txt)
 

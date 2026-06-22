@@ -6,6 +6,7 @@ TMPDIR="$(mktemp -d)"
 trap 'rm -rf "$TMPDIR"' EXIT
 mkdir -p "$TMPDIR/workspace" "$TMPDIR/cloud"
 mkdir -p "$TMPDIR/skills/demo-skill/references"
+mkdir -p "$TMPDIR/workspace/.codex/skills/project-skill/references"
 cat >"$TMPDIR/skills/demo-skill/SKILL.md" <<'EOF'
 ---
 name: demo-skill
@@ -21,6 +22,21 @@ cat >"$TMPDIR/skills/demo-skill/references/checklist.md" <<'EOF'
 
 - Read policy first.
 - Keep changes scoped.
+EOF
+cat >"$TMPDIR/workspace/.codex/skills/project-skill/SKILL.md" <<'EOF'
+---
+name: project-skill
+description: Project local skill for .codex discovery tests.
+---
+
+# Project Skill
+
+Use `references/project-note.md` for project-local guidance.
+EOF
+cat >"$TMPDIR/workspace/.codex/skills/project-skill/references/project-note.md" <<'EOF'
+# Project Note
+
+- This came from project .codex/skills.
 EOF
 
 cat > "$TMPDIR/bridge.policy.json" <<JSON
@@ -51,7 +67,7 @@ printf '%s\n' "$response" | node -e '
 const fs = require("node:fs");
 const lines = fs.readFileSync(0, "utf8").trim().split(/\n+/).filter(Boolean).map(JSON.parse);
 const tools = lines.find((line) => line.id === 2)?.result?.tools?.map((tool) => tool.name) ?? [];
-for (const name of ["project.snapshot", "project.bundle", "policy.read", "policy.validate", "skill.list", "skill.search", "skill.read", "skill.bundle", "skill.route", "file.list", "file.read_path", "file_read_path", "code.read", "bridge.health", "bridge.activity", "cloud.download", "codex.task_start", "codex.status", "codex.result", "codex.cancel"]) {
+for (const name of ["project.snapshot", "project.bundle", "policy.read", "policy.validate", "skill.list", "skill.search", "skill.read", "skill.bundle", "skill.route", "file.list", "file.read_path", "file_read_path", "code.read", "bridge.health", "bridge.activity", "cloud.download", "handoff.create", "codex.task_start", "codex.status", "codex.result", "codex.cancel"]) {
   if (!tools.includes(name)) throw new Error(`missing tool: ${name}`);
 }
 for (const name of ["shell.exec", "process.start", "file.write", "file.delete", "service.restart"]) {
@@ -73,7 +89,7 @@ printf '%s\n' "$chatgpt_app_response" | node -e '
 const fs = require("node:fs");
 const lines = fs.readFileSync(0, "utf8").trim().split(/\n+/).filter(Boolean).map(JSON.parse);
 const tools = lines.find((line) => line.id === 2)?.result?.tools?.map((tool) => tool.name) ?? [];
-const expected = ["bridge_health", "policy_read", "file_list", "file_read_path", "file_write", "local_list_dir", "local_read_file", "local_write_file", "local_bundle_dir", "local_workspace_action"];
+const expected = ["bridge_health", "policy_read", "file_list", "file_read_path", "file_write", "local_list_dir", "local_read_file", "local_write_file", "local_bundle_dir", "local_workspace_action", "handoff_create", "codex_task_start", "codex_status", "codex_result"];
 for (const name of expected) {
   if (!tools.includes(name)) throw new Error(`chatgpt-app profile missing tool: ${name}`);
 }
@@ -147,6 +163,58 @@ console.log("[test] chatgpt-app local_workspace_action write_file ok");
 
 grep -q "hello from workspace action" "$TMPDIR/workspace/chatgpt-app/action-write.txt"
 
+echo "[test] chatgpt-app handoff/codex aliases"
+cat >"$TMPDIR/fake-codex-chatgpt" <<'SH'
+#!/usr/bin/env bash
+set -euo pipefail
+out=""
+prev=""
+for arg in "$@"; do
+  if [[ "$prev" == "--output-last-message" ]]; then
+    out="$arg"
+  fi
+  prev="$arg"
+done
+echo '{"event":"fake-codex-chatgpt","message":"alias smoke passed"}'
+if [[ -n "$out" ]]; then
+  printf 'fake chatgpt alias codex complete\n' >"$out"
+fi
+SH
+chmod +x "$TMPDIR/fake-codex-chatgpt"
+
+chatgpt_handoff_response="$(
+  printf '%s\n' \
+    '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"chatgpt-app-handoff-smoke","version":"0.1.0"}}}' \
+    '{"jsonrpc":"2.0","method":"notifications/initialized","params":{}}' \
+    "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/call\",\"params\":{\"name\":\"handoff_create\",\"arguments\":{\"projectPath\":\"$TMPDIR/workspace\",\"title\":\"ChatGPT alias handoff\",\"objective\":\"Create a fake handoff alias result.\",\"constraints\":[\"Operate only inside the approved project root.\"],\"allowedOperations\":[\"read\",\"write\",\"create_artifact\"],\"riskLevel\":\"low\",\"acceptanceCriteria\":[\"Fake alias handoff completed.\"],\"skillRoot\":\"$TMPDIR/skills\",\"skillTask\":\"use demo skill checklist\",\"maxSkillContext\":1}}}" \
+  | LOCALBRIDGE_TOOL_PROFILE=chatgpt-app LOCALBRIDGE_DATA_DIR="$TMPDIR/chatgpt-app-codex-data" LOCALBRIDGE_LOG_DIR="$TMPDIR/chatgpt-app-codex-logs" LOCALBRIDGE_POLICY_PATH="$TMPDIR/bridge.policy.json" node dist/index.js 2>/dev/null
+)"
+chatgpt_handoff_id="$(printf '%s\n' "$chatgpt_handoff_response" | node -e '
+const fs = require("node:fs");
+const lines = fs.readFileSync(0, "utf8").trim().split(/\n+/).filter(Boolean).map(JSON.parse);
+const created = lines.find((line) => line.id === 2)?.result?.structuredContent;
+if (!created?.handoffId || created?.handoff?.riskLevel !== "low") {
+  throw new Error(`unexpected handoff_create result: ${JSON.stringify(created)}`);
+}
+process.stdout.write(created.handoffId);
+')"
+chatgpt_codex_response="$(
+  printf '%s\n' \
+    '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"chatgpt-app-codex-smoke","version":"0.1.0"}}}' \
+    '{"jsonrpc":"2.0","method":"notifications/initialized","params":{}}' \
+    "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/call\",\"params\":{\"name\":\"codex_task_start\",\"arguments\":{\"handoffId\":\"$chatgpt_handoff_id\",\"timeoutMs\":5000}}}" \
+  | LOCALBRIDGE_CODEX_BIN="$TMPDIR/fake-codex-chatgpt" LOCALBRIDGE_TOOL_PROFILE=chatgpt-app LOCALBRIDGE_DATA_DIR="$TMPDIR/chatgpt-app-codex-data" LOCALBRIDGE_LOG_DIR="$TMPDIR/chatgpt-app-codex-logs" LOCALBRIDGE_POLICY_PATH="$TMPDIR/bridge.policy.json" node dist/index.js 2>/dev/null
+)"
+printf '%s\n' "$chatgpt_codex_response" | node -e '
+const fs = require("node:fs");
+const lines = fs.readFileSync(0, "utf8").trim().split(/\n+/).filter(Boolean).map(JSON.parse);
+const started = lines.find((line) => line.id === 2)?.result?.structuredContent;
+if (!started?.id || !started?.handoffId || !started?.command?.includes("--dangerously-bypass-approvals-and-sandbox")) {
+  throw new Error(`unexpected codex_task_start alias result: ${JSON.stringify(started)}`);
+}
+console.log("[test] chatgpt-app handoff/codex aliases ok");
+'
+
 echo "[test] stdio tools/list debug profile"
 debug_response="$(
   printf '%s\n' \
@@ -179,7 +247,7 @@ printf '%s\n' "$codex_only_response" | node -e '
 const fs = require("node:fs");
 const lines = fs.readFileSync(0, "utf8").trim().split(/\n+/).filter(Boolean).map(JSON.parse);
 const tools = lines.find((line) => line.id === 2)?.result?.tools?.map((tool) => tool.name) ?? [];
-for (const name of ["codex.task_start", "codex.status", "codex.result", "codex.cancel", "bridge.health", "bridge.activity", "policy.read"]) {
+for (const name of ["handoff.create", "codex.task_start", "codex.status", "codex.result", "codex.cancel", "bridge.health", "bridge.activity", "policy.read"]) {
   if (!tools.includes(name)) throw new Error(`codex-only profile missing tool: ${name}`);
 }
 for (const name of ["project.bundle", "file.read_path", "shell.exec", "file.write"]) {
@@ -192,6 +260,14 @@ echo "[test] codex runner"
 cat >"$TMPDIR/fake-codex" <<'SH'
 #!/usr/bin/env bash
 set -euo pipefail
+if [[ "${FAKE_EXPECT_BASE_URL:-}" != "" && "${OPENAI_BASE_URL:-}" != "$FAKE_EXPECT_BASE_URL" ]]; then
+  echo "OPENAI_BASE_URL mismatch: ${OPENAI_BASE_URL:-}" >&2
+  exit 64
+fi
+if [[ "${FAKE_EXPECT_OPENAI_API_KEY:-}" != "" && "${OPENAI_API_KEY:-}" != "$FAKE_EXPECT_OPENAI_API_KEY" ]]; then
+  echo "OPENAI_API_KEY mismatch" >&2
+  exit 65
+fi
 out=""
 prev=""
 for arg in "$@"; do
@@ -207,19 +283,40 @@ fi
 SH
 chmod +x "$TMPDIR/fake-codex"
 
+handoff_response="$(
+  printf '%s\n' \
+    '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"handoff-smoke","version":"0.1.0"}}}' \
+    '{"jsonrpc":"2.0","method":"notifications/initialized","params":{}}' \
+    "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/call\",\"params\":{\"name\":\"handoff.create\",\"arguments\":{\"projectPath\":\"$TMPDIR/workspace\",\"title\":\"Handoff smoke\",\"objective\":\"Create a fake Codex handoff smoke result.\",\"constraints\":[\"Operate only inside the approved project root.\"],\"allowedOperations\":[\"read\",\"write\",\"run_tests\"],\"testCommands\":[\"npm test\"],\"expectedArtifacts\":[\"docs/HANDOFF_DEMO.md\"],\"riskLevel\":\"low\",\"acceptanceCriteria\":[\"Fake Codex completed.\"],\"skillContext\":[\"manual-demo-context\"],\"skillRoot\":\"$TMPDIR/skills\",\"skillTask\":\"use demo skill checklist\",\"maxSkillContext\":2,\"notes\":\"created by smoke test\"}}}" \
+  | CODEX_BIN="$TMPDIR/fake-codex" LOCALBRIDGE_DATA_DIR="$TMPDIR/codex-data" LOCALBRIDGE_LOG_DIR="$TMPDIR/codex-logs" LOCALBRIDGE_POLICY_PATH="$TMPDIR/bridge.policy.json" node dist/index.js 2>/dev/null
+)"
+
+handoff_id="$(printf '%s\n' "$handoff_response" | node -e '
+const fs = require("node:fs");
+const lines = fs.readFileSync(0, "utf8").trim().split(/\n+/).filter(Boolean).map(JSON.parse);
+const created = lines.find((line) => line.id === 2)?.result?.structuredContent;
+if (!created?.handoffId || !created?.handoffFile || created?.handoff?.riskLevel !== "low" || !created?.handoff?.skillContext?.some((item) => item.includes("demo-skill"))) {
+  throw new Error(`unexpected handoff.create result: ${JSON.stringify(created)}`);
+}
+if (!fs.existsSync(created.handoffFile)) {
+  throw new Error(`handoff file missing: ${created.handoffFile}`);
+}
+process.stdout.write(created.handoffId);
+')"
+
 codex_response="$(
   printf '%s\n' \
     '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"codex-smoke","version":"0.1.0"}}}' \
     '{"jsonrpc":"2.0","method":"notifications/initialized","params":{}}' \
-    "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/call\",\"params\":{\"name\":\"codex.task_start\",\"arguments\":{\"projectPath\":\"$TMPDIR/workspace\",\"task\":\"fake codex smoke\",\"timeoutMs\":5000}}}" \
-  | CODEX_BIN="$TMPDIR/fake-codex" LOCALBRIDGE_DATA_DIR="$TMPDIR/codex-data" LOCALBRIDGE_LOG_DIR="$TMPDIR/codex-logs" LOCALBRIDGE_POLICY_PATH="$TMPDIR/bridge.policy.json" node dist/index.js 2>/dev/null
+    "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/call\",\"params\":{\"name\":\"codex.task_start\",\"arguments\":{\"handoffId\":\"$handoff_id\",\"timeoutMs\":5000}}}" \
+  | CODEX_BIN="$TMPDIR/fake-codex" FAKE_EXPECT_BASE_URL="http://127.0.0.1:4999/v1" FAKE_EXPECT_OPENAI_API_KEY="sub2api-test-key" SUB2API_KEY="sub2api-test-key" LOCALBRIDGE_CODEX_PROVIDER="sub2api" LOCALBRIDGE_CODEX_BASE_URL="http://127.0.0.1:4999/v1" LOCALBRIDGE_CODEX_API_KEY_ENV="SUB2API_KEY" LOCALBRIDGE_DATA_DIR="$TMPDIR/codex-data" LOCALBRIDGE_LOG_DIR="$TMPDIR/codex-logs" LOCALBRIDGE_POLICY_PATH="$TMPDIR/bridge.policy.json" node dist/index.js 2>/dev/null
 )"
 
 codex_task_id="$(printf '%s\n' "$codex_response" | node -e '
 const fs = require("node:fs");
 const lines = fs.readFileSync(0, "utf8").trim().split(/\n+/).filter(Boolean).map(JSON.parse);
 const started = lines.find((line) => line.id === 2)?.result?.structuredContent;
-if (!started?.id || !started?.command?.includes(" exec --json --cd ") || !started?.logFile) {
+if (!started?.id || !started?.handoffId || !started?.handoff || !started?.command?.includes(" exec --json --cd ") || !started?.command?.includes("--sandbox danger-full-access") || !started?.command?.includes("--dangerously-bypass-approvals-and-sandbox") || !started?.logFile || !started?.notes?.some((note) => note.text.includes("provider=sub2api@127.0.0.1:4999"))) {
   throw new Error(`unexpected codex.task_start result: ${JSON.stringify(started)}`);
 }
 process.stdout.write(started.id);
@@ -249,6 +346,24 @@ if (!task || !["success", "running"].includes(task.status) || !task.logFile || !
 }
 console.log("[test] codex runner ok");
 ' "$TMPDIR/codex-data/tasks.json" "$codex_task_id"
+
+codex_result_response="$(
+  printf '%s\n' \
+    '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"codex-result-smoke","version":"0.1.0"}}}' \
+    '{"jsonrpc":"2.0","method":"notifications/initialized","params":{}}' \
+    "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/call\",\"params\":{\"name\":\"codex.result\",\"arguments\":{\"taskId\":\"$codex_task_id\",\"limit\":1,\"includeLog\":true}}}" \
+  | CODEX_BIN="$TMPDIR/fake-codex" LOCALBRIDGE_DATA_DIR="$TMPDIR/codex-data" LOCALBRIDGE_LOG_DIR="$TMPDIR/codex-logs" LOCALBRIDGE_POLICY_PATH="$TMPDIR/bridge.policy.json" node dist/index.js 2>/dev/null
+)"
+
+printf '%s\n' "$codex_result_response" | node -e '
+const fs = require("node:fs");
+const lines = fs.readFileSync(0, "utf8").trim().split(/\n+/).filter(Boolean).map(JSON.parse);
+const result = lines.find((line) => line.id === 2)?.result?.structuredContent;
+if (!result?.handoff?.id || result.handoff.id !== process.argv[1] || !result?.logTail?.includes("fake-codex")) {
+  throw new Error(`unexpected codex.result handoff result: ${JSON.stringify(result)}`);
+}
+console.log("[test] handoff codex result ok");
+' "$handoff_id"
 
 echo "[test] absolute path read"
 path_read_response="$(
@@ -308,6 +423,13 @@ console.log("[test] project bundle ok");
 '
 
 echo "[test] local skills"
+skill_bundle_blocked_response="$(
+  printf '%s\n' \
+    '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"skill-bundle-blocked-smoke","version":"0.1.0"}}}' \
+    '{"jsonrpc":"2.0","method":"notifications/initialized","params":{}}' \
+    "{\"jsonrpc\":\"2.0\",\"id\":7,\"method\":\"tools/call\",\"params\":{\"name\":\"skill.bundle\",\"arguments\":{\"skillRoot\":\"$TMPDIR/skills\",\"skill\":\"demo-skill\",\"includeReferences\":true}}}" \
+  | LOCALBRIDGE_DATA_DIR="$TMPDIR/skill-blocked-data" LOCALBRIDGE_LOG_DIR="$TMPDIR/skill-blocked-logs" LOCALBRIDGE_POLICY_PATH="$TMPDIR/bridge.policy.json" node dist/index.js 2>/dev/null
+)"
 skill_list_response="$(
   printf '%s\n' \
     '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"skill-smoke","version":"0.1.0"}}}' \
@@ -322,11 +444,18 @@ skill_read_response="$(
     "{\"jsonrpc\":\"2.0\",\"id\":3,\"method\":\"tools/call\",\"params\":{\"name\":\"skill.read\",\"arguments\":{\"skillRoot\":\"$TMPDIR/skills\",\"skill\":\"demo-skill\"}}}" \
   | LOCALBRIDGE_DATA_DIR="$TMPDIR/skill-data" LOCALBRIDGE_LOG_DIR="$TMPDIR/skill-logs" LOCALBRIDGE_POLICY_PATH="$TMPDIR/bridge.policy.json" node dist/index.js 2>/dev/null
 )"
+skill_activation_id="$(printf '%s\n' "$skill_read_response" | node -e '
+const fs = require("node:fs");
+const lines = fs.readFileSync(0, "utf8").trim().split(/\n+/).filter(Boolean).map(JSON.parse);
+const activationId = lines.find((line) => line.id === 3)?.result?.structuredContent?.activationId;
+if (!activationId) throw new Error(`missing activationId: ${JSON.stringify(lines)}`);
+process.stdout.write(activationId);
+')"
 skill_bundle_response="$(
   printf '%s\n' \
     '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"skill-bundle-smoke","version":"0.1.0"}}}' \
     '{"jsonrpc":"2.0","method":"notifications/initialized","params":{}}' \
-    "{\"jsonrpc\":\"2.0\",\"id\":4,\"method\":\"tools/call\",\"params\":{\"name\":\"skill.bundle\",\"arguments\":{\"skillRoot\":\"$TMPDIR/skills\",\"skill\":\"demo-skill\",\"includeReferences\":true}}}" \
+    "{\"jsonrpc\":\"2.0\",\"id\":4,\"method\":\"tools/call\",\"params\":{\"name\":\"skill.bundle\",\"arguments\":{\"skillRoot\":\"$TMPDIR/skills\",\"skill\":\"demo-skill\",\"includeReferences\":true,\"activationId\":\"$skill_activation_id\"}}}" \
   | LOCALBRIDGE_DATA_DIR="$TMPDIR/skill-data" LOCALBRIDGE_LOG_DIR="$TMPDIR/skill-logs" LOCALBRIDGE_POLICY_PATH="$TMPDIR/bridge.policy.json" node dist/index.js 2>/dev/null
 )"
 skill_route_response="$(
@@ -351,6 +480,61 @@ if (!bundle?.files?.some((file) => file.path === "demo-skill/references/checklis
 const route = lines.find((line) => line.id === 5)?.result?.structuredContent;
 if (!route?.recommendations?.some((skill) => skill.id === "demo-skill")) throw new Error(`unexpected skill.route: ${JSON.stringify(route)}`);
 console.log("[test] local skills ok");
+'
+
+printf '%s\n' "$skill_bundle_blocked_response" | node -e '
+const fs = require("node:fs");
+const lines = fs.readFileSync(0, "utf8").trim().split(/\n+/).filter(Boolean).map(JSON.parse);
+const bundle = lines.find((line) => line.id === 7)?.result?.structuredContent;
+if (bundle?.files?.some((file) => file.path === "demo-skill/references/checklist.md")) {
+  throw new Error(`reference should be gated before skill.read: ${JSON.stringify(bundle)}`);
+}
+if (!bundle?.notes?.some((note) => note.includes("Reference files are gated"))) {
+  throw new Error(`missing gated reference note: ${JSON.stringify(bundle)}`);
+}
+console.log("[test] skill activation gate ok");
+'
+
+echo "[test] project .codex skills"
+project_skill_direct_response="$(
+  printf '%s\n' \
+    '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"project-skill-direct-smoke","version":"0.1.0"}}}' \
+    '{"jsonrpc":"2.0","method":"notifications/initialized","params":{}}' \
+    "{\"jsonrpc\":\"2.0\",\"id\":9,\"method\":\"tools/call\",\"params\":{\"name\":\"skill.bundle\",\"arguments\":{\"skillRoot\":\"$TMPDIR/workspace/.codex/skills\",\"skill\":\"project-skill\",\"includeReferences\":true}}}" \
+  | LOCALBRIDGE_DATA_DIR="$TMPDIR/project-skill-direct-data" LOCALBRIDGE_LOG_DIR="$TMPDIR/project-skill-direct-logs" LOCALBRIDGE_POLICY_PATH="$TMPDIR/bridge.policy.json" node dist/index.js 2>/dev/null
+)"
+project_skill_response="$(
+  printf '%s\n' \
+    '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"project-skill-smoke","version":"0.1.0"}}}' \
+    '{"jsonrpc":"2.0","method":"notifications/initialized","params":{}}' \
+    "{\"jsonrpc\":\"2.0\",\"id\":8,\"method\":\"tools/call\",\"params\":{\"name\":\"handoff.create\",\"arguments\":{\"projectPath\":\"$TMPDIR/workspace\",\"title\":\"Project skill handoff\",\"objective\":\"Use project skill.\",\"constraints\":[\"Operate only inside project.\"],\"allowedOperations\":[\"read\"],\"riskLevel\":\"low\",\"skillTask\":\"project local guidance\",\"maxSkillContext\":3}}}" \
+  | LOCALBRIDGE_DATA_DIR="$TMPDIR/project-skill-data" LOCALBRIDGE_LOG_DIR="$TMPDIR/project-skill-logs" LOCALBRIDGE_POLICY_PATH="$TMPDIR/bridge.policy.json" node dist/index.js 2>/dev/null
+)"
+
+printf '%s\n' "$project_skill_response" | node -e '
+const fs = require("node:fs");
+const lines = fs.readFileSync(0, "utf8").trim().split(/\n+/).filter(Boolean).map(JSON.parse);
+const handoff = lines.find((line) => line.id === 8)?.result?.structuredContent?.handoff;
+if (!handoff?.skillContext?.some((item) => item.includes("project-skill"))) {
+  throw new Error(`project .codex skill was not routed into handoff: ${JSON.stringify(handoff)}`);
+}
+if (!handoff?.skillActivations?.some((item) => item.id === "project-skill" && item.activated === false)) {
+  throw new Error(`missing project skill activation metadata: ${JSON.stringify(handoff)}`);
+}
+console.log("[test] project .codex skills ok");
+'
+
+printf '%s\n' "$project_skill_direct_response" | node -e '
+const fs = require("node:fs");
+const lines = fs.readFileSync(0, "utf8").trim().split(/\n+/).filter(Boolean).map(JSON.parse);
+const bundle = lines.find((line) => line.id === 9)?.result?.structuredContent;
+if (!bundle?.skill || bundle.skill.id !== "project-skill") {
+  throw new Error(`direct project .codex skill root failed: ${JSON.stringify(lines)}`);
+}
+if (bundle?.files?.some((file) => file.path.endsWith("references/project-note.md"))) {
+  throw new Error(`project reference should be gated before skill.read: ${JSON.stringify(bundle)}`);
+}
+console.log("[test] project .codex direct skill root ok");
 '
 
 skill_activity_response="$(

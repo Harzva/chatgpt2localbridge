@@ -30,7 +30,9 @@ Objective: make Web ChatGPT feel like it can safely operate an approved local wo
 
 - Keep low-level tools, but label them as advanced/debug tools.
 - Promote mid-level project tools for reading context, validating policy, inspecting diffs, and running tests.
+- Route complex work through structured handoffs before local Codex execution. See [Handoff Spec](./docs/handoff-spec.md).
 - Add high-level `codex.*` tools so Web ChatGPT can delegate local software work to Codex CLI through a controlled runner.
+- Treat local skills as a safe registry first, then a manifest-driven runtime. See [Skill Runtime Roadmap](./docs/skill-runtime-roadmap.md).
 - Default public guidance to OAuth or Secure MCP Tunnel.
 - Disable or hide raw `shell.exec` in normal user mode when a safer tool can handle the same workflow.
 - Make the native/local app the operator console for policy, traces, running tasks, logs, diffs, and cancellation.
@@ -75,15 +77,18 @@ Purpose: give Web ChatGPT one clean entry point for local coding work.
 
 Initial tool set:
 
+- `handoff.create`
 - `codex.task_start`
 - `codex.status`
 - `codex.result`
 
 Target tool set:
 
-- [ ] `codex.task_start`: start a bounded local Codex CLI job in an approved root.
-- [ ] `codex.status`: return lifecycle state, elapsed time, active step, and last log lines.
-- [ ] `codex.result`: return summary, changed files, diff, tests, and artifacts.
+- [x] `handoff.create`: validate and persist a structured task handoff without executing code.
+  - Evidence: 2026-06-21 `docs/handoff-spec.md`, `src/mcpServer.ts`, and `scripts/test-mcp.sh`.
+- [ ] Harden `codex.task_start`: start a bounded local Codex CLI job in an approved root with production-grade runner controls.
+- [ ] Harden `codex.status`: return lifecycle state, elapsed time, active step, and last log lines.
+- [ ] Harden `codex.result`: return summary, changed files, diff, tests, and artifacts.
 - [ ] `codex.cancel`: stop a running job from ChatGPT or the local app.
 - [ ] `codex.tail`: stream or page recent logs for long jobs.
 - [ ] `codex.review_diff`: ask local Codex CLI to review current changes without applying edits.
@@ -92,7 +97,9 @@ Runner constraints:
 
 - [ ] Require `projectRoot` to be inside `allowedProjectRoots`.
 - [ ] Enforce per-task timeout and output limits.
-- [ ] Run Codex CLI with a controlled profile, sandbox, and approval policy.
+- [x] Run Codex CLI with the intended local runner permission mode.
+  - Current mode: `--sandbox danger-full-access --dangerously-bypass-approvals-and-sandbox`.
+  - Boundary still comes from bridge policy, handoff constraints, timeout, logs, and App trace.
 - [ ] Store task logs, stdout/stderr, generated patches, and final summaries in the runtime data directory.
 - [ ] Record all runner lifecycle events in `tool-calls.jsonl` and audit logs.
 - [ ] Expose changed-file and diff summaries before any public or destructive operation.
@@ -186,16 +193,29 @@ Runner constraints:
 - [ ] Add trace records for all mid-level tools.
 - [ ] Add ChatGPT test prompts for local read, diff, and test workflows.
 
-### Milestone 3: Codex Runner MVP
+### Milestone 3: Skill Runtime MVP
 
-- [ ] Implement `codex.task_start`.
-- [ ] Implement `codex.status`.
-- [ ] Implement `codex.result`.
+- [ ] Stabilize the read-only skill registry.
+- [ ] Add `skill.json` manifest parsing.
+- [ ] Add manifest-aware `skill.list/search/read/route`.
+- [ ] Add safe template-only `skill.invoke`.
+- [ ] Add App Skill Catalog and trace grouping.
+
+Source of truth: [Skill Runtime Roadmap](./docs/skill-runtime-roadmap.md).
+
+### Milestone 4: Handoff -> Codex Runner MVP
+
+- [x] Add `docs/handoff-spec.md`.
+- [x] Implement `handoff.create`.
+- [x] Let `codex.task_start` accept `handoffId`.
+- [ ] Harden `codex.task_start` for real Codex CLI jobs.
+- [ ] Harden `codex.status` for long-running task polling.
+- [ ] Harden `codex.result` for final summaries, changed files, and artifacts.
 - [ ] Persist logs and results.
 - [ ] Add timeout and root restrictions.
 - [ ] Validate with a real local repo task.
 
-### Milestone 4: App Control Plane
+### Milestone 5: App Control Plane
 
 - [ ] Add policy editor.
 - [ ] Add trace viewer.
@@ -203,7 +223,7 @@ Runner constraints:
 - [ ] Add shell access toggle.
 - [ ] Add connector setup helper.
 
-### Milestone 5: Public-Safe Deployment
+### Milestone 6: Public-Safe Deployment
 
 - [ ] Make OAuth the default public guide.
 - [ ] Add Secure MCP Tunnel guide.

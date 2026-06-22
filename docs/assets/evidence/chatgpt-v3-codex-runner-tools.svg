@@ -1,0 +1,72 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="780" viewBox="0 0 1200 780" role="img" aria-labelledby="title desc">
+  <title id="title">ChatGPT connector evidence: Codex Runner tools visible</title>
+  <desc id="desc">A sanitized evidence card showing attachlocal2chatgpt-v3 exposing handoff and Codex Runner MCP actions in ChatGPT.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0b1020"/>
+      <stop offset="0.52" stop-color="#101827"/>
+      <stop offset="1" stop-color="#172033"/>
+    </linearGradient>
+    <linearGradient id="bubble" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#1f4ca3"/>
+      <stop offset="1" stop-color="#12336f"/>
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="18" stdDeviation="24" flood-color="#000000" flood-opacity="0.34"/>
+    </filter>
+  </defs>
+
+  <rect width="1200" height="780" rx="42" fill="url(#bg)"/>
+  <circle cx="1020" cy="100" r="180" fill="#10a37f" opacity="0.10"/>
+  <circle cx="170" cy="680" r="210" fill="#7c3aed" opacity="0.12"/>
+
+  <g transform="translate(88 74)">
+    <rect x="0" y="0" width="1024" height="632" rx="34" fill="#0f172a" stroke="#29364d" filter="url(#shadow)"/>
+
+    <g transform="translate(42 42)">
+      <rect width="450" height="145" rx="24" fill="url(#bubble)"/>
+      <text x="28" y="42" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="24" font-weight="760" fill="#ffffff">attachlocal2chatgpt-v3</text>
+      <text x="28" y="82" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="19" fill="#dbeafe">ChatGPT MCP action list refreshed</text>
+      <text x="28" y="115" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="17" fill="#bfdbfe">No code interpreter. Real connector tools.</text>
+    </g>
+
+    <g transform="translate(42 235)">
+      <text x="0" y="0" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="25" font-weight="760" fill="#ffffff">Action list returned by ChatGPT</text>
+      <text x="0" y="36" font-family="SFMono-Regular, Menlo, Consolas, monospace" font-size="19" fill="#cbd5e1">bridge_health</text>
+      <text x="0" y="68" font-family="SFMono-Regular, Menlo, Consolas, monospace" font-size="19" fill="#cbd5e1">policy_read</text>
+      <text x="0" y="100" font-family="SFMono-Regular, Menlo, Consolas, monospace" font-size="19" fill="#cbd5e1">local_workspace_action</text>
+      <text x="0" y="132" font-family="SFMono-Regular, Menlo, Consolas, monospace" font-size="19" fill="#86efac">handoff_create</text>
+      <text x="0" y="164" font-family="SFMono-Regular, Menlo, Consolas, monospace" font-size="19" fill="#86efac">codex_task_start</text>
+      <text x="0" y="196" font-family="SFMono-Regular, Menlo, Consolas, monospace" font-size="19" fill="#86efac">codex_status</text>
+      <text x="0" y="228" font-family="SFMono-Regular, Menlo, Consolas, monospace" font-size="19" fill="#86efac">codex_result</text>
+      <text x="0" y="260" font-family="SFMono-Regular, Menlo, Consolas, monospace" font-size="19" fill="#94a3b8">handoff_get, handoff_list, artifacts...</text>
+    </g>
+
+    <g transform="translate(562 216)">
+      <rect width="388" height="270" rx="26" fill="#111c31" stroke="#31425f"/>
+      <text x="30" y="48" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="23" font-weight="780" fill="#ffffff">Runner tools present</text>
+
+      <g transform="translate(30 82)">
+        <rect width="328" height="40" rx="13" fill="#10391f" stroke="#236b3b"/>
+        <text x="18" y="27" font-family="SFMono-Regular, Menlo, Consolas, monospace" font-size="17" fill="#bbf7d0">handoff_create: present</text>
+      </g>
+      <g transform="translate(30 132)">
+        <rect width="328" height="40" rx="13" fill="#10391f" stroke="#236b3b"/>
+        <text x="18" y="27" font-family="SFMono-Regular, Menlo, Consolas, monospace" font-size="17" fill="#bbf7d0">codex_task_start: present</text>
+      </g>
+      <g transform="translate(30 182)">
+        <rect width="328" height="40" rx="13" fill="#10391f" stroke="#236b3b"/>
+        <text x="18" y="27" font-family="SFMono-Regular, Menlo, Consolas, monospace" font-size="17" fill="#bbf7d0">codex_status: present</text>
+      </g>
+      <g transform="translate(30 232)">
+        <rect width="328" height="40" rx="13" fill="#10391f" stroke="#236b3b"/>
+        <text x="18" y="27" font-family="SFMono-Regular, Menlo, Consolas, monospace" font-size="17" fill="#bbf7d0">codex_result: present</text>
+      </g>
+    </g>
+
+    <g transform="translate(42 558)">
+      <rect width="908" height="1" fill="#29364d"/>
+      <text x="0" y="42" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="18" fill="#94a3b8">Sanitized public evidence. No tokens, unlock codes, cookies, or private file contents are shown.</text>
+    </g>
+  </g>
+</svg>
