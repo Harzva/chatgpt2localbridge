@@ -49,6 +49,7 @@
     "scripts/mac-screenshot.sh",
     "scripts/render-doc-assets.mjs",
     "scripts/stop-launchd.sh",
+    "scripts/sync-codex-analytics.mjs",
     "scripts/test-mcp.sh",
     "src",
     "README.md",

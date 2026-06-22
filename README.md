@@ -33,6 +33,8 @@
     ·
     <a href="./docs/handoff-spec.md">Handoff spec</a>
     ·
+    <a href="./docs/codex-analytics.md">Codex analytics</a>
+    ·
     <a href="./docs/evidence.md">Evidence</a>
     ·
     <a href="./docs/promo/xhs-note.md">Promo copy</a>
