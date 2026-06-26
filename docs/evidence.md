@@ -129,6 +129,12 @@ intentionally excluded.
 - `docs/assets/evidence/chatgpt-v3-codex-runner-tools.svg`: sanitized evidence
   card showing the v3 ChatGPT connector action list with handoff and Codex
   Runner tools visible.
+- `docs/assets/evidence/batch-read-safety-note.svg`: sanitized evidence card
+  explaining why large batch reads are kept bounded and routed through
+  `batch_read`.
+- `docs/assets/evidence/shell-exec-safety-block.svg`: sanitized evidence card
+  explaining why `shell_exec` is excluded from the Web ChatGPT connector
+  profile.
 - `docs/CHATGPT_WRITE_TEST.md`: harmless write smoke-test artifact.
 - `question/understanding.md`: public troubleshooting explanation of why write
   tools were missing before the profile update.

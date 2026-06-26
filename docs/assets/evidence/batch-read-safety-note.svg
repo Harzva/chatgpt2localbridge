@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="675" viewBox="0 0 1200 675" role="img" aria-labelledby="title desc">
+  <title id="title">Batch read safety note</title>
+  <desc id="desc">Public-safe evidence card explaining that hosted ChatGPT safety checks can misclassify large batch reads, while the bridge stays available through safer bounded tools.</desc>
+  <rect width="1200" height="675" rx="36" fill="#f8fafc"/>
+  <rect x="44" y="44" width="1112" height="587" rx="30" fill="#ffffff" stroke="#dbe3ef"/>
+  <circle cx="92" cy="92" r="11" fill="#22c55e"/>
+  <circle cx="124" cy="92" r="11" fill="#f59e0b"/>
+  <circle cx="156" cy="92" r="11" fill="#ef4444"/>
+  <text x="194" y="101" font-family="Inter, Arial, sans-serif" font-size="24" font-weight="700" fill="#0f172a">ChatGPT2LocalBridge Evidence</text>
+  <rect x="74" y="137" width="1052" height="136" rx="22" fill="#eaf4ff"/>
+  <text x="106" y="178" font-family="Inter, Arial, sans-serif" font-size="25" font-weight="700" fill="#0f2f5f">Hosted safety can over-block large batch reads</text>
+  <text x="106" y="218" font-family="Inter, Arial, sans-serif" font-size="22" fill="#0f2f5f">Observed: batch context was treated as risky, even though the local bridge was healthy.</text>
+  <text x="106" y="250" font-family="Inter, Arial, sans-serif" font-size="22" fill="#0f2f5f">Fix: prefer bounded file_list, local_list_dir, and batch_read with strict limits.</text>
+  <rect x="74" y="306" width="500" height="238" rx="22" fill="#f1f5f9" stroke="#d7e1ee"/>
+  <text x="106" y="350" font-family="Inter, Arial, sans-serif" font-size="23" font-weight="700" fill="#0f172a">Before</text>
+  <text x="106" y="390" font-family="Inter, Arial, sans-serif" font-size="20" fill="#334155">Large planning context + batch read</text>
+  <text x="106" y="426" font-family="Inter, Arial, sans-serif" font-size="20" fill="#334155">Tool call may be blocked upstream</text>
+  <text x="106" y="462" font-family="Inter, Arial, sans-serif" font-size="20" fill="#ef4444">Result: no file content returned</text>
+  <rect x="626" y="306" width="500" height="238" rx="22" fill="#ecfdf5" stroke="#bbf7d0"/>
+  <text x="658" y="350" font-family="Inter, Arial, sans-serif" font-size="23" font-weight="700" fill="#064e3b">Now</text>
+  <text x="658" y="390" font-family="Inter, Arial, sans-serif" font-size="20" fill="#065f46">Small bounded reads</text>
+  <text x="658" y="426" font-family="Inter, Arial, sans-serif" font-size="20" fill="#065f46">batch_read supports glob fallback</text>
+  <text x="658" y="462" font-family="Inter, Arial, sans-serif" font-size="20" fill="#16a34a">Result: safer connector workflow</text>
+  <rect x="74" y="570" width="1052" height="32" rx="16" fill="#e2e8f0"/>
+  <rect x="74" y="570" width="740" height="32" rx="16" fill="#3b82f6"/>
+  <text x="94" y="593" font-family="Inter, Arial, sans-serif" font-size="17" font-weight="700" fill="#ffffff">Recommended path: file_list -> batch_read -> handoff_create -> codex_task_start</text>
+</svg>

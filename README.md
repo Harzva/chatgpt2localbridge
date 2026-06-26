@@ -514,6 +514,13 @@ and Codex Runner entry points:
   <img src="./docs/assets/evidence/chatgpt-v3-codex-runner-tools.svg" alt="ChatGPT connector evidence showing handoff_create, codex_task_start, codex_status, and codex_result" width="900" />
 </p>
 
+Public-safe safety evidence from field testing:
+
+<p align="center">
+  <img src="./docs/assets/evidence/batch-read-safety-note.svg" alt="Evidence card explaining hosted safety checks can over-block large batch reads and the bridge now prefers bounded batch_read" width="49%" />
+  <img src="./docs/assets/evidence/shell-exec-safety-block.svg" alt="Evidence card showing shell_exec can be blocked by hosted ChatGPT safety checks and is not exposed in the Web ChatGPT connector profile" width="49%" />
+</p>
+
 Field note: keep `xhigh` / `XHigh` mode off by default. In local testing it
 produced more connector/tool-call errors than the normal profile, so use it only
 for focused debugging with trace capture enabled.
