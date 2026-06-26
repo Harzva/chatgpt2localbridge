@@ -15,12 +15,14 @@ npm run -s build && npm run -s test
 Observed public-safe result summary:
 
 ```text
-[test] normal tools ok (55)
-[test] chatgpt-app tools ok (14)
+[test] normal tools ok (56)
+[test] chatgpt-app tools ok (15)
 [test] chatgpt-app file_write ok
 [test] chatgpt-app local_write_file ok
 [test] chatgpt-app local_workspace_action write_file ok
-[test] debug tools ok (69)
+[test] chatgpt-app batch_read ok
+[test] chatgpt-app batch_read fallback ok
+[test] debug tools ok (71)
 [test] codex-only tools ok (15)
 [test] cloud download write ok
 [test] oauth metadata ok
@@ -61,10 +63,11 @@ an OAuth custom connector. The useful troubleshooting finding was:
 - Write behavior is separately verified by
   [`CHATGPT_WRITE_TEST.md`](./CHATGPT_WRITE_TEST.md), a harmless Markdown file
   created through the connector flow.
-- A `shell.exec` attempt that included risky command wording was blocked by the
-  bridge safety policy. The plan was rewritten as plain text and then saved as a
-  local TXT artifact. This is expected behavior and is useful evidence that the
-  bridge is not a raw unrestricted command proxy.
+- `shell_exec` is no longer exposed in the Web ChatGPT connector profile. Hosted
+  ChatGPT safety checks can block shell-like actions before they reach the
+  bridge, so the public connector path now prefers `file_list`, `batch_read`,
+  and handoff -> Codex Runner. Raw shell tools remain debug-only for trusted
+  local troubleshooting.
 
 ## Linux Field Evidence
 
@@ -114,12 +117,15 @@ intentionally excluded.
 - Prefer OAuth or a private tunnel for public endpoints.
 - Do not publish unlock codes, OAuth stores, cookies, raw screenshots with
   secrets, or `.env.local`.
-- Treat raw `shell.exec` as a debug surface. The normal ChatGPT path should
-  prefer project, policy, bundle, trace, and Codex Runner tools.
+- Treat raw `shell.exec` / `shell_exec` as debug-only surfaces. The normal
+  ChatGPT path should prefer project, policy, `batch_read`, trace, and Codex
+  Runner tools.
 
 ## Public-Safe Evidence Included In Repo
 
-- `assets/mcp-tools.json`: generated ChatGPT-visible MCP tool catalog.
+- `assets/mcp-tools.json`: generated debug-profile MCP tool catalog. The
+  Web ChatGPT connector profile is narrower and intentionally excludes
+  `shell_exec`.
 - `docs/assets/evidence/chatgpt-v3-codex-runner-tools.svg`: sanitized evidence
   card showing the v3 ChatGPT connector action list with handoff and Codex
   Runner tools visible.

@@ -1,8 +1,68 @@
 {
-  "generatedAt": "2026-06-22T04:41:31.149Z",
+  "generatedAt": "2026-06-26T08:46:34.488Z",
   "source": "MCP tools/list",
-  "count": 69,
+  "count": 71,
   "tools": [
+    {
+      "name": "batch_read",
+      "title": "Batch Read Local Files",
+      "description": "Read a bounded batch of approved project-relative text files. Use this for known file sets or small globs instead of many file_read_path calls. Keep maxFiles and maxTotalBytes modest for hosted ChatGPT safety checks.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "projectPath": {
+            "type": "string",
+            "description": "Absolute approved local workspace root."
+          },
+          "files": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 100,
+            "default": [],
+            "description": "Project-relative file paths to read. Do not pass absolute paths."
+          },
+          "globs": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 20,
+            "default": [],
+            "description": "Optional rg-style glob patterns relative to projectPath, for example src/**/*.java."
+          },
+          "maxFiles": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 60
+          },
+          "maxFileBytes": {
+            "type": "integer",
+            "minimum": 100,
+            "maximum": 2097152,
+            "default": 40000
+          },
+          "maxTotalBytes": {
+            "type": "integer",
+            "minimum": 1000,
+            "maximum": 2097152,
+            "default": 200000
+          }
+        },
+        "required": [
+          "projectPath"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "openWorldHint": false
+      }
+    },
     {
       "name": "bridge_health",
       "title": "Bridge Health",
@@ -299,7 +359,7 @@
     {
       "name": "codex_result",
       "title": "Codex Runner Result",
-      "description": "ChatGPT-compatible alias for codex.result. Return a compact task summary by default; set includeLog/includeDiff only when needed.",
+      "description": "ChatGPT-compatible alias for codex.result. Return a compact task summary by default; set includeLog/includeDiff/includeHandoff only when needed.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -310,7 +370,7 @@
             "type": "integer",
             "minimum": 1,
             "maximum": 20,
-            "default": 5
+            "default": 1
           },
           "includeLog": {
             "type": "boolean",
@@ -319,6 +379,16 @@
           "includeDiff": {
             "type": "boolean",
             "default": false
+          },
+          "includeHandoff": {
+            "type": "boolean",
+            "default": false
+          },
+          "maxTextBytes": {
+            "type": "integer",
+            "minimum": 200,
+            "maximum": 20000,
+            "default": 1800
           }
         },
         "additionalProperties": false,
@@ -387,7 +457,7 @@
             "type": "integer",
             "minimum": 1000,
             "maximum": 600000,
-            "default": 120000
+            "default": 300000
           }
         },
         "additionalProperties": false,
@@ -429,7 +499,7 @@
     {
       "name": "codex.result",
       "title": "Codex Runner Result",
-      "description": "Return a compact Codex Runner result summary. Full log and diff are opt-in to reduce hosted ChatGPT safety-check blocks.",
+      "description": "Return a compact Codex Runner result summary. Full log, diff, and handoff metadata are opt-in to reduce hosted ChatGPT safety-check blocks.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -440,7 +510,7 @@
             "type": "integer",
             "minimum": 1,
             "maximum": 20,
-            "default": 5
+            "default": 1
           },
           "includeLog": {
             "type": "boolean",
@@ -449,6 +519,16 @@
           "includeDiff": {
             "type": "boolean",
             "default": false
+          },
+          "includeHandoff": {
+            "type": "boolean",
+            "default": false
+          },
+          "maxTextBytes": {
+            "type": "integer",
+            "minimum": 200,
+            "maximum": 20000,
+            "default": 1800
           }
         },
         "additionalProperties": false,
@@ -515,7 +595,7 @@
             "type": "integer",
             "minimum": 1000,
             "maximum": 600000,
-            "default": 120000
+            "default": 300000
           }
         },
         "additionalProperties": false,
@@ -1924,6 +2004,47 @@
         "readOnlyHint": false,
         "destructiveHint": true,
         "openWorldHint": false
+      }
+    },
+    {
+      "name": "shell_exec",
+      "title": "Shell Exec",
+      "description": "ChatGPT-compatible shell alias. Run a shell command inside an approved projectPath and return stdout/stderr. Uses bridge policy denyPatterns, timeout, and output limits.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "projectPath": {
+            "type": "string",
+            "description": "Absolute approved workspace root used as the command cwd."
+          },
+          "command": {
+            "type": "string",
+            "description": "Shell command to run inside projectPath."
+          },
+          "timeoutMs": {
+            "type": "integer",
+            "minimum": 1000,
+            "maximum": 120000,
+            "default": 30000
+          },
+          "maxOutputBytes": {
+            "type": "integer",
+            "minimum": 1000,
+            "maximum": 1000000,
+            "default": 200000
+          }
+        },
+        "required": [
+          "projectPath",
+          "command"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "openWorldHint": true
       }
     },
     {

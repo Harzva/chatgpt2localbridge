@@ -2,6 +2,7 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+NODE_BIN="$(command -v node)"
 TMPDIR="$(mktemp -d)"
 trap 'rm -rf "$TMPDIR"' EXIT
 mkdir -p "$TMPDIR/workspace" "$TMPDIR/cloud"
@@ -89,11 +90,11 @@ printf '%s\n' "$chatgpt_app_response" | node -e '
 const fs = require("node:fs");
 const lines = fs.readFileSync(0, "utf8").trim().split(/\n+/).filter(Boolean).map(JSON.parse);
 const tools = lines.find((line) => line.id === 2)?.result?.tools?.map((tool) => tool.name) ?? [];
-const expected = ["bridge_health", "policy_read", "file_list", "file_read_path", "file_write", "local_list_dir", "local_read_file", "local_write_file", "local_bundle_dir", "local_workspace_action", "handoff_create", "codex_task_start", "codex_status", "codex_result"];
+const expected = ["bridge_health", "policy_read", "file_list", "file_read_path", "file_write", "local_list_dir", "local_read_file", "local_write_file", "local_bundle_dir", "batch_read", "local_workspace_action", "handoff_create", "codex_task_start", "codex_status", "codex_result"];
 for (const name of expected) {
   if (!tools.includes(name)) throw new Error(`chatgpt-app profile missing tool: ${name}`);
 }
-for (const name of ["file.read_path", "shell.exec", "file.write", "process.start", "service.restart"]) {
+for (const name of ["file.read_path", "shell.exec", "shell_exec", "file.write", "process.start", "service.restart"]) {
   if (tools.includes(name)) throw new Error(`chatgpt-app profile exposed unsafe or ambiguous tool: ${name}`);
 }
 if (tools.length !== expected.length) throw new Error(`chatgpt-app profile expected ${expected.length} tools, got ${tools.length}: ${tools.join(", ")}`);
@@ -162,6 +163,55 @@ console.log("[test] chatgpt-app local_workspace_action write_file ok");
 '
 
 grep -q "hello from workspace action" "$TMPDIR/workspace/chatgpt-app/action-write.txt"
+
+echo "[test] chatgpt-app batch_read"
+mkdir -p "$TMPDIR/workspace/src/main/java/com/example"
+printf 'class Alpha {}\n' >"$TMPDIR/workspace/src/main/java/com/example/Alpha.java"
+printf 'class Beta {}\n' >"$TMPDIR/workspace/src/main/java/com/example/Beta.java"
+printf 'export const gamma = 1;\n' >"$TMPDIR/workspace/src/main/java/com/example/Gamma.ts"
+batch_read_response="$(
+  printf '%s\n' \
+    '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"chatgpt-app-batch-read-smoke","version":"0.1.0"}}}' \
+    '{"jsonrpc":"2.0","method":"notifications/initialized","params":{}}' \
+    "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/call\",\"params\":{\"name\":\"batch_read\",\"arguments\":{\"projectPath\":\"$TMPDIR/workspace\",\"globs\":[\"src/**/*.java\"],\"maxFiles\":10,\"maxFileBytes\":20000,\"maxTotalBytes\":50000}}}" \
+  | LOCALBRIDGE_TOOL_PROFILE=chatgpt-app LOCALBRIDGE_DATA_DIR="$TMPDIR/chatgpt-app-data" LOCALBRIDGE_LOG_DIR="$TMPDIR/chatgpt-app-logs" LOCALBRIDGE_POLICY_PATH="$TMPDIR/bridge.policy.json" node dist/index.js 2>/dev/null
+)"
+
+printf '%s\n' "$batch_read_response" | node -e '
+const fs = require("node:fs");
+const lines = fs.readFileSync(0, "utf8").trim().split(/\n+/).filter(Boolean).map(JSON.parse);
+const result = lines.find((line) => line.id === 2)?.result?.structuredContent;
+const paths = result?.files?.map((file) => file.path) ?? [];
+if (!paths.includes("src/main/java/com/example/Alpha.java") || !paths.includes("src/main/java/com/example/Beta.java")) {
+  throw new Error(`unexpected batch_read paths: ${JSON.stringify(result)}`);
+}
+if (!result.files.some((file) => file.content?.includes("class Alpha")) || !result.files.some((file) => file.content?.includes("class Beta"))) {
+  throw new Error(`unexpected batch_read content: ${JSON.stringify(result)}`);
+}
+console.log("[test] chatgpt-app batch_read ok");
+'
+
+echo "[test] chatgpt-app batch_read fallback without rg"
+batch_read_fallback_response="$(
+  printf '%s\n' \
+    '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"chatgpt-app-batch-read-fallback-smoke","version":"0.1.0"}}}' \
+    '{"jsonrpc":"2.0","method":"notifications/initialized","params":{}}' \
+    "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/call\",\"params\":{\"name\":\"batch_read\",\"arguments\":{\"projectPath\":\"$TMPDIR/workspace\",\"globs\":[\"src/**/*.ts\"],\"maxFiles\":10,\"maxFileBytes\":20000,\"maxTotalBytes\":50000}}}" \
+  | PATH="/usr/bin:/bin" LOCALBRIDGE_TOOL_PROFILE=chatgpt-app LOCALBRIDGE_DATA_DIR="$TMPDIR/chatgpt-app-data" LOCALBRIDGE_LOG_DIR="$TMPDIR/chatgpt-app-logs" LOCALBRIDGE_POLICY_PATH="$TMPDIR/bridge.policy.json" "$NODE_BIN" dist/index.js 2>/dev/null
+)"
+
+printf '%s\n' "$batch_read_fallback_response" | node -e '
+const fs = require("node:fs");
+const lines = fs.readFileSync(0, "utf8").trim().split(/\n+/).filter(Boolean).map(JSON.parse);
+const result = lines.find((line) => line.id === 2)?.result?.structuredContent;
+if (!result?.files?.some((file) => file.path === "src/main/java/com/example/Gamma.ts" && file.content?.includes("gamma"))) {
+  throw new Error(`unexpected batch_read fallback result: ${JSON.stringify(result)}`);
+}
+if (!result?.notes?.some((note) => note.includes("built-in glob fallback"))) {
+  throw new Error(`missing batch_read fallback note: ${JSON.stringify(result)}`);
+}
+console.log("[test] chatgpt-app batch_read fallback ok");
+'
 
 echo "[test] chatgpt-app handoff/codex aliases"
 cat >"$TMPDIR/fake-codex-chatgpt" <<'SH'
@@ -359,7 +409,8 @@ printf '%s\n' "$codex_result_response" | node -e '
 const fs = require("node:fs");
 const lines = fs.readFileSync(0, "utf8").trim().split(/\n+/).filter(Boolean).map(JSON.parse);
 const result = lines.find((line) => line.id === 2)?.result?.structuredContent;
-if (!result?.handoff?.id || result.handoff.id !== process.argv[1] || !result?.logTail?.includes("fake-codex")) {
+const handoffId = result?.handoff?.id ?? result?.tasks?.[0]?.handoffId;
+if (handoffId !== process.argv[1] || !result?.logTail?.includes("fake-codex")) {
   throw new Error(`unexpected codex.result handoff result: ${JSON.stringify(result)}`);
 }
 console.log("[test] handoff codex result ok");

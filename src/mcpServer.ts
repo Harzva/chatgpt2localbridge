@@ -24,6 +24,8 @@ const execAsync = promisify(exec);
 const MAX_FILE_BYTES = 2 * 1024 * 1024;
 const MAX_OUTPUT_BYTES = 200_000;
 const MAX_SKILL_FILE_BYTES = 512 * 1024;
+const DEFAULT_CODEX_RUNNER_TIMEOUT_MS = 300_000;
+const CODEX_RUNNER_DEAD_PID_GRACE_MS = 30_000;
 const BRIDGE_VERSION = '0.1.1';
 const TRACE_SESSION_FILE = 'trace-session.json';
 const SKILL_ACTIVATION_FILE = 'skill-activations.json';
@@ -1111,6 +1113,33 @@ export function createMcpServer(config: BridgeConfig): McpServer {
     };
   }));
 
+  server.registerTool('batch_read', {
+    title: 'Batch Read Local Files',
+    description: 'Read a bounded batch of approved project-relative text files. Use this for known file sets or small globs instead of many file_read_path calls. Keep maxFiles and maxTotalBytes modest for hosted ChatGPT safety checks.',
+    inputSchema: {
+      projectPath: z.string().describe('Absolute approved local workspace root.'),
+      files: z.array(z.string()).max(100).default([]).describe('Project-relative file paths to read. Do not pass absolute paths.'),
+      globs: z.array(z.string()).max(20).default([]).describe('Optional rg-style glob patterns relative to projectPath, for example src/**/*.java.'),
+      maxFiles: z.number().int().min(1).max(100).default(60),
+      maxFileBytes: z.number().int().min(100).max(MAX_FILE_BYTES).default(40_000),
+      maxTotalBytes: z.number().int().min(1000).max(2 * 1024 * 1024).default(200_000),
+    },
+    outputSchema: {
+      projectPath: z.string(),
+      files: z.array(z.object(bundleFileOutput)),
+      truncated: z.boolean(),
+      notes: z.array(z.string()),
+    },
+    annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
+  }, withToolLogging('batch_read', async ({ projectPath, files, globs, maxFiles, maxFileBytes, maxTotalBytes }) => {
+    const result = batchReadLocalFiles({ projectPath, files, globs, maxFiles, maxFileBytes, maxTotalBytes });
+    return {
+      content: [{ type: 'text' as const, text: formatBatchReadContent(result) }],
+      structuredContent: result,
+      _meta: { fileContents: result.files },
+    };
+  }));
+
   server.registerTool('local_workspace_action', {
     title: 'Local Workspace Action',
     description: 'Preferred single entrypoint for ChatGPT. Choose action=list_dir for directories, read_file for one file, write_file to save one text file, or bundle_dir for a directory summary plus selected files.',
@@ -1476,23 +1505,27 @@ export function createMcpServer(config: BridgeConfig): McpServer {
     },
     annotations: { readOnlyHint: false, openWorldHint: true },
   }, withToolLogging('shell.exec', async ({ projectPath, command, timeoutMs, maxOutputBytes }) => {
-    const root = resolveProject(projectPath);
-    const blocked = validateShellCommand(command);
-    if (blocked) {
-      return commandResponse(command, 126, '', blocked, maxOutputBytes, true);
-    }
-    try {
-      const { stdout, stderr } = await execAsync(command, {
-        cwd: root,
-        timeout: timeoutMs,
-        maxBuffer: maxOutputBytes,
-        env: process.env,
-      });
-      return commandResponse(command, 0, stdout, stderr, maxOutputBytes);
-    } catch (err) {
-      const e = err as { code?: number; stdout?: string; stderr?: string; message?: string };
-      return commandResponse(command, e.code ?? 1, e.stdout ?? '', e.stderr ?? e.message ?? '', maxOutputBytes, true);
-    }
+    return runShellCommand(projectPath, command, timeoutMs, maxOutputBytes);
+  }));
+
+  server.registerTool('shell_exec', {
+    title: 'Shell Exec',
+    description: 'ChatGPT-compatible shell alias. Run a shell command inside an approved projectPath and return stdout/stderr. Uses bridge policy denyPatterns, timeout, and output limits.',
+    inputSchema: {
+      projectPath: z.string().describe('Absolute approved workspace root used as the command cwd.'),
+      command: z.string().describe('Shell command to run inside projectPath.'),
+      timeoutMs: z.number().int().min(1000).max(120000).default(30000),
+      maxOutputBytes: z.number().int().min(1000).max(1000000).default(MAX_OUTPUT_BYTES),
+    },
+    outputSchema: {
+      command: z.string(),
+      exitCode: z.number(),
+      stdout: z.string(),
+      stderr: z.string(),
+    },
+    annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: true },
+  }, withToolLogging('shell_exec', async ({ projectPath, command, timeoutMs, maxOutputBytes }) => {
+    return runShellCommand(projectPath, command, timeoutMs, maxOutputBytes);
   }));
 
   server.registerTool('test.detect', {
@@ -1982,7 +2015,7 @@ export function createMcpServer(config: BridgeConfig): McpServer {
       workspace: z.string().optional(),
       projectPath: z.string().optional(),
       mode: z.enum(['normal', 'debug']).default('normal'),
-      timeoutMs: z.number().int().min(1_000).max(600_000).default(120_000),
+      timeoutMs: z.number().int().min(1_000).max(600_000).default(DEFAULT_CODEX_RUNNER_TIMEOUT_MS),
     },
     outputSchema: z.object(taskOutput).shape,
     annotations: { readOnlyHint: false, openWorldHint: false },
@@ -2004,7 +2037,7 @@ export function createMcpServer(config: BridgeConfig): McpServer {
       workspace: z.string().optional(),
       projectPath: z.string().optional(),
       mode: z.enum(['normal', 'debug']).default('normal'),
-      timeoutMs: z.number().int().min(1_000).max(600_000).default(120_000),
+      timeoutMs: z.number().int().min(1_000).max(600_000).default(DEFAULT_CODEX_RUNNER_TIMEOUT_MS),
     },
     outputSchema: z.object(taskOutput).shape,
     annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
@@ -2057,12 +2090,14 @@ export function createMcpServer(config: BridgeConfig): McpServer {
 
   server.registerTool('codex.result', {
     title: 'Codex Runner Result',
-    description: 'Return a compact Codex Runner result summary. Full log and diff are opt-in to reduce hosted ChatGPT safety-check blocks.',
+    description: 'Return a compact Codex Runner result summary. Full log, diff, and handoff metadata are opt-in to reduce hosted ChatGPT safety-check blocks.',
     inputSchema: {
       taskId: z.string().optional(),
-      limit: z.number().int().min(1).max(20).default(5),
+      limit: z.number().int().min(1).max(20).default(1),
       includeLog: z.boolean().default(false),
       includeDiff: z.boolean().default(false),
+      includeHandoff: z.boolean().default(false),
+      maxTextBytes: z.number().int().min(200).max(20_000).default(1_800),
     },
     outputSchema: {
       tasks: z.array(z.object(taskOutput)),
@@ -2079,7 +2114,7 @@ export function createMcpServer(config: BridgeConfig): McpServer {
       logTail: z.string(),
     },
     annotations: { readOnlyHint: true, openWorldHint: false },
-  }, withToolLogging('codex.result', async ({ taskId, limit, includeLog, includeDiff }) => {
+  }, withToolLogging('codex.result', async ({ taskId, limit, includeLog, includeDiff, includeHandoff, maxTextBytes }) => {
     const tasks = listCodexRunnerTasks(taskId, limit).map(refreshCodexTaskResult);
     const primary = tasks[0];
     const compactTasks = tasks.map(compactCodexTask);
@@ -2090,30 +2125,32 @@ export function createMcpServer(config: BridgeConfig): McpServer {
           ? [
               formatTask(primary),
               primary.changedFiles?.length ? `changed files=${primary.changedFiles.length}` : '',
-              primary.testResult ? `result=${truncate(primary.testResult, 1200)}` : '',
-              includeLog || includeDiff ? 'verbose fields requested explicitly' : 'compact result: logTail and diffPreview omitted by default',
+              primary.testResult ? `result=${truncate(primary.testResult, Math.min(maxTextBytes, 1200))}` : '',
+              includeLog || includeDiff || includeHandoff ? 'verbose fields requested explicitly' : 'compact result: logTail, diffPreview, and handoff omitted by default',
             ].filter(Boolean).join('\n')
           : 'No Codex Runner result records yet.',
       }],
       structuredContent: {
         tasks: compactTasks,
-        handoff: primary?.handoff,
+        handoff: includeHandoff ? primary?.handoff : undefined,
         changedFiles: primary?.changedFiles ?? [],
         diffPreview: includeDiff ? primary?.diffPreview ?? '' : '',
-        testResult: primary?.testResult ?? '',
-        logTail: includeLog && primary?.logFile ? readTextTail(primary.logFile, 12_000) : '',
+        testResult: truncate(primary?.testResult ?? '', maxTextBytes),
+        logTail: includeLog && primary?.logFile ? readTextTail(primary.logFile, maxTextBytes) : '',
       },
     };
   }));
 
   server.registerTool('codex_result', {
     title: 'Codex Runner Result',
-    description: 'ChatGPT-compatible alias for codex.result. Return a compact task summary by default; set includeLog/includeDiff only when needed.',
+    description: 'ChatGPT-compatible alias for codex.result. Return a compact task summary by default; set includeLog/includeDiff/includeHandoff only when needed.',
     inputSchema: {
       taskId: z.string().optional(),
-      limit: z.number().int().min(1).max(20).default(5),
+      limit: z.number().int().min(1).max(20).default(1),
       includeLog: z.boolean().default(false),
       includeDiff: z.boolean().default(false),
+      includeHandoff: z.boolean().default(false),
+      maxTextBytes: z.number().int().min(200).max(20_000).default(1_800),
     },
     outputSchema: {
       tasks: z.array(z.object(taskOutput)),
@@ -2130,7 +2167,7 @@ export function createMcpServer(config: BridgeConfig): McpServer {
       logTail: z.string(),
     },
     annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
-  }, withToolLogging('codex_result', async ({ taskId, limit, includeLog, includeDiff }) => {
+  }, withToolLogging('codex_result', async ({ taskId, limit, includeLog, includeDiff, includeHandoff, maxTextBytes }) => {
     const tasks = listCodexRunnerTasks(taskId, limit).map(refreshCodexTaskResult);
     const primary = tasks[0];
     const compactTasks = tasks.map(compactCodexTask);
@@ -2141,18 +2178,18 @@ export function createMcpServer(config: BridgeConfig): McpServer {
           ? [
               formatTask(primary),
               primary.changedFiles?.length ? `changed files=${primary.changedFiles.length}` : '',
-              primary.testResult ? `result=${truncate(primary.testResult, 1200)}` : '',
-              includeLog || includeDiff ? 'verbose fields requested explicitly' : 'compact result: logTail and diffPreview omitted by default',
+              primary.testResult ? `result=${truncate(primary.testResult, Math.min(maxTextBytes, 1200))}` : '',
+              includeLog || includeDiff || includeHandoff ? 'verbose fields requested explicitly' : 'compact result: logTail, diffPreview, and handoff omitted by default',
             ].filter(Boolean).join('\n')
           : 'No Codex Runner result records yet.',
       }],
       structuredContent: {
         tasks: compactTasks,
-        handoff: primary?.handoff,
+        handoff: includeHandoff ? primary?.handoff : undefined,
         changedFiles: primary?.changedFiles ?? [],
         diffPreview: includeDiff ? primary?.diffPreview ?? '' : '',
-        testResult: primary?.testResult ?? '',
-        logTail: includeLog && primary?.logFile ? readTextTail(primary.logFile, 12_000) : '',
+        testResult: truncate(primary?.testResult ?? '', maxTextBytes),
+        logTail: includeLog && primary?.logFile ? readTextTail(primary.logFile, maxTextBytes) : '',
       },
     };
   }));
@@ -2598,6 +2635,7 @@ function isToolAllowedForProfile(profile: BridgeConfig['toolProfile'], tool: str
       'local_read_file',
       'local_write_file',
       'local_bundle_dir',
+      'batch_read',
       'local_workspace_action',
       'handoff_create',
       'codex_task_start',
@@ -2635,6 +2673,7 @@ function isToolAllowedForProfile(profile: BridgeConfig['toolProfile'], tool: str
 
 function isLowLevelTool(tool: string): boolean {
   return tool === 'shell.exec'
+    || tool === 'shell_exec'
     || tool.startsWith('process.')
     || tool === 'service.restart'
     || tool === 'git.revert'
@@ -2834,6 +2873,197 @@ function bundleLocalDirectory(args: {
   };
 }
 
+function batchReadLocalFiles(args: {
+  projectPath: string;
+  files: string[];
+  globs: string[];
+  maxFiles: number;
+  maxFileBytes: number;
+  maxTotalBytes: number;
+}) {
+  const root = resolveProject(args.projectPath);
+  const notes: string[] = [];
+  const expanded = expandBatchReadFiles(root, args.files, args.globs, args.maxFiles, notes);
+  let remainingBytes = args.maxTotalBytes;
+  let truncated = expanded.truncated;
+
+  const files = expanded.files.map((file) => {
+    const result = readProjectFileForBundle(root, file, args.maxFileBytes, remainingBytes);
+    if (result.content) {
+      remainingBytes -= Buffer.byteLength(result.content, 'utf-8');
+    }
+    if (result.truncated) truncated = true;
+    if (result.error) notes.push(`${file}: ${result.error}`);
+    if (remainingBytes <= 0) truncated = true;
+    return result;
+  });
+
+  if (!files.length) {
+    notes.push('No files matched the provided files/globs.');
+  }
+
+  return {
+    projectPath: root,
+    files,
+    truncated,
+    notes,
+  };
+}
+
+function expandBatchReadFiles(
+  root: string,
+  files: string[],
+  globs: string[],
+  maxFiles: number,
+  notes: string[],
+) {
+  const candidates = new Set<string>();
+
+  for (const file of files) {
+    try {
+      candidates.add(normalizeBatchReadRelPath(file));
+    } catch (err) {
+      notes.push(`${file}: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+
+  for (const glob of globs) {
+    const trimmed = glob.trim();
+    if (!trimmed) continue;
+    try {
+      const output = execFileSync('rg', ['--files', '-g', trimmed, '.'], {
+        cwd: root,
+        encoding: 'utf-8',
+        maxBuffer: 10 * 1024 * 1024,
+      });
+      for (const line of output.split('\n')) {
+        const relPath = line.trim();
+        if (!relPath) continue;
+        try {
+          candidates.add(normalizeBatchReadRelPath(relPath));
+        } catch (err) {
+          notes.push(`${relPath}: ${err instanceof Error ? err.message : String(err)}`);
+        }
+      }
+    } catch (err) {
+      const status = typeof err === 'object' && err !== null && 'status' in err
+        ? (err as { status?: number }).status
+        : undefined;
+      if (status === 1) continue;
+      const fallbackMatches = collectFilesByGlobFallback(root, trimmed, notes);
+      for (const relPath of fallbackMatches) {
+        candidates.add(relPath);
+      }
+    }
+  }
+
+  const sorted = [...candidates].sort((a, b) => a.localeCompare(b));
+  const truncated = sorted.length > maxFiles;
+  if (truncated) {
+    notes.push(`Matched ${sorted.length} files; only the first ${maxFiles} sorted files were read.`);
+  }
+
+  return {
+    files: sorted.slice(0, maxFiles),
+    truncated,
+  };
+}
+
+function normalizeBatchReadRelPath(value: string): string {
+  const normalized = value.trim().replace(/\\/g, '/').replace(/^\.\//, '');
+  if (!normalized) throw new Error('File path is empty.');
+  if (path.isAbsolute(normalized)) throw new Error(`File path must be relative: ${value}`);
+  if (normalized.split('/').some((part) => part === '..')) {
+    throw new Error(`Path outside project directory: ${value}`);
+  }
+  return normalized;
+}
+
+function collectFilesByGlobFallback(root: string, glob: string, notes: string[]): string[] {
+  const matcher = globToRegExp(glob);
+  const matches: string[] = [];
+  const maxScanFiles = 20_000;
+  let scanned = 0;
+  let truncated = false;
+
+  function walk(dir: string) {
+    if (truncated) return;
+    let entries: fs.Dirent[];
+    try {
+      entries = fs.readdirSync(dir, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name));
+    } catch {
+      return;
+    }
+
+    for (const entry of entries) {
+      if (truncated) return;
+      if (entry.isDirectory() && SKIP_DIRS.has(entry.name)) continue;
+      const fullPath = path.join(dir, entry.name);
+      const relPath = path.relative(root, fullPath).split(path.sep).join('/');
+
+      if (entry.isDirectory()) {
+        walk(fullPath);
+        continue;
+      }
+      if (!entry.isFile()) continue;
+
+      scanned++;
+      if (scanned > maxScanFiles) {
+        truncated = true;
+        return;
+      }
+      if (!matcher.test(relPath)) continue;
+
+      try {
+        resolveInsideProject(root, relPath);
+        matches.push(relPath);
+      } catch (err) {
+        notes.push(`${relPath}: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    }
+  }
+
+  walk(root);
+  notes.push(`glob ${glob}: used built-in glob fallback because ripgrep was unavailable in the bridge runtime.`);
+  if (truncated) {
+    notes.push(`glob ${glob}: fallback scan stopped after ${maxScanFiles} files.`);
+  }
+  return matches;
+}
+
+function globToRegExp(glob: string): RegExp {
+  const normalized = normalizeBatchReadRelPath(glob);
+  let pattern = '^';
+  for (let index = 0; index < normalized.length; index++) {
+    const char = normalized[index];
+    const next = normalized[index + 1];
+
+    if (char === '*') {
+      if (next === '*') {
+        index++;
+        if (normalized[index + 1] === '/') {
+          index++;
+          pattern += '(?:.*\\/)?';
+        } else {
+          pattern += '.*';
+        }
+      } else {
+        pattern += '[^/]*';
+      }
+      continue;
+    }
+
+    if (char === '?') {
+      pattern += '[^/]';
+      continue;
+    }
+
+    pattern += char.replace(/[.+^${}()|[\]\\]/g, '\\$&');
+  }
+  pattern += '$';
+  return new RegExp(pattern);
+}
+
 function readProjectFile(root: string, relPath: string, maxLines: number) {
   try {
     const fullPath = resolveInsideProject(root, relPath);
@@ -2988,6 +3218,38 @@ function formatBundleContent(bundle: {
 
   if (bundle.notes.length) {
     sections.push('', '## Notes', bundle.notes.map((note) => `- ${note}`).join('\n'));
+  }
+
+  return sections.join('\n');
+}
+
+function formatBatchReadContent(result: {
+  projectPath: string;
+  files: Array<{ path: string; size?: number; lines?: number; sha256?: string; truncated: boolean; content?: string; error?: string }>;
+  truncated: boolean;
+  notes: string[];
+}) {
+  const sections = [
+    '# ChatGPT2LocalBridge Batch Read',
+    `Project: ${result.projectPath}`,
+    `Files: ${result.files.length}`,
+    `Truncated: ${result.truncated ? 'yes' : 'no'}`,
+  ];
+
+  for (const file of result.files) {
+    const meta = [
+      file.size == null ? undefined : `${file.size} bytes`,
+      file.lines == null ? undefined : `${file.lines} lines`,
+      file.sha256 ? `sha256=${file.sha256}` : undefined,
+      file.truncated ? 'truncated' : undefined,
+    ].filter(Boolean).join(', ');
+    sections.push(`\n--- BEGIN FILE ${file.path}${meta ? ` (${meta})` : ''} ---`);
+    sections.push(file.error ? `ERROR: ${file.error}` : file.content ?? '');
+    sections.push(`--- END FILE ${file.path} ---`);
+  }
+
+  if (result.notes.length) {
+    sections.push('', '## Notes', result.notes.map((note) => `- ${note}`).join('\n'));
   }
 
   return sections.join('\n');
@@ -3510,6 +3772,26 @@ function commandResponse(command: string, exitCode: number, stdout: string, stde
     structuredContent: { command, exitCode, stdout: out, stderr: err },
     isError,
   };
+}
+
+async function runShellCommand(projectPath: string, command: string, timeoutMs: number, maxOutputBytes: number) {
+  const root = resolveProject(projectPath);
+  const blocked = validateShellCommand(command);
+  if (blocked) {
+    return commandResponse(command, 126, '', blocked, maxOutputBytes, true);
+  }
+  try {
+    const { stdout, stderr } = await execAsync(command, {
+      cwd: root,
+      timeout: timeoutMs,
+      maxBuffer: maxOutputBytes,
+      env: process.env,
+    });
+    return commandResponse(command, 0, stdout, stderr, maxOutputBytes);
+  } catch (err) {
+    const e = err as { code?: number; stdout?: string; stderr?: string; message?: string };
+    return commandResponse(command, e.code ?? 1, e.stdout ?? '', e.stderr ?? e.message ?? '', maxOutputBytes, true);
+  }
 }
 
 function validateShellCommand(command: string): string | undefined {
@@ -4343,6 +4625,10 @@ function refreshCodexRunnerTasks(): TaskRecord[] {
   let changed = false;
   const tasks = readTasks().map((task) => {
     if (task.status === 'running' && task.pid && !isPidRunning(task.pid)) {
+      const lastUpdateMs = Date.parse(task.updatedAt || task.startedAt || task.createdAt);
+      if (Number.isFinite(lastUpdateMs) && Date.now() - lastUpdateMs < CODEX_RUNNER_DEAD_PID_GRACE_MS) {
+        return task.projectPath ? refreshCodexTaskResult(task) : task;
+      }
       changed = true;
       return refreshCodexTaskResult({
         ...task,
@@ -4364,23 +4650,22 @@ function refreshCodexRunnerTasks(): TaskRecord[] {
 function compactCodexTask(task: TaskRecord): TaskRecord {
   return {
     id: task.id,
-    title: task.title,
+    title: truncate(task.title, 500),
     workspace: task.workspace,
     projectPath: task.projectPath,
     status: task.status,
-    notes: task.notes.slice(-3),
+    notes: task.notes.slice(-3).map((note) => ({ ...note, text: truncate(note.text, 400) })),
     createdAt: task.createdAt,
     updatedAt: task.updatedAt,
     mode: task.mode,
     timeoutMs: task.timeoutMs,
     handoffId: task.handoffId,
-    handoff: task.handoff,
     exitCode: task.exitCode,
     signal: task.signal,
     startedAt: task.startedAt,
     completedAt: task.completedAt,
-    changedFiles: task.changedFiles?.slice(0, 80),
-    testResult: task.testResult ? truncate(task.testResult, 1800) : undefined,
+    changedFiles: task.changedFiles?.slice(0, 40),
+    testResult: task.testResult ? truncate(task.testResult, 1_000) : undefined,
   };
 }
 

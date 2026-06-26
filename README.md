@@ -376,7 +376,7 @@ Full guides:
 | --- | --- | --- |
 | High-level agent workflow | Recommended entry point for Web ChatGPT once Codex Runner lands | `codex.task_start`, `codex.status`, `codex.result` |
 | Mid-level project workflow | Preferred today for reading context, checking policy, inspecting diffs, and running tests | `project.bundle`, `policy.read`, `git.diff`, `test.run` |
-| Low-level debug primitives | Advanced troubleshooting only; avoid as the normal ChatGPT path | `file.read_path`, `file.write`, `shell.exec` |
+| Low-level debug primitives | Advanced local troubleshooting only; avoid as the Web ChatGPT path | `file.read_path`, `file.write`, `shell.exec` |
 
 The roadmap tracks the move from low-level primitives toward a safer Codex Runner surface. See [ROADMAP.md](./ROADMAP.md).
 
@@ -389,7 +389,7 @@ names and the earlier internal aliases:
 
 | Profile | Alias | Use |
 | --- | --- | --- |
-| `minimal` | `chatgpt-app` | Smallest ChatGPT connector surface; compatibility aliases only. |
+| `minimal` | `chatgpt-app` | Small ChatGPT connector surface with compatibility aliases. Raw shell execution is intentionally not exposed. |
 | `standard` | `normal` | Recommended default for project, policy, skills, git, tests, traces, and Codex task workflows. |
 | `full` | `debug` | Trusted local debugging with low-level file, process, shell, and service tools exposed. |
 | `codex-runner-only` | `codex-runner-only` | High-level Codex task control plane without general project tools. |
@@ -401,7 +401,17 @@ LOCALBRIDGE_TOOL_PROFILE=standard
 ```
 
 Use `minimal` for the first public connector test, `standard` for daily work,
-and `full` only for focused debugging where you want the raw primitives visible.
+and `full` only for focused local debugging where you want every raw primitive
+visible.
+
+`shell_exec` is **not supported in the Web ChatGPT connector profile**. Hosted
+ChatGPT safety checks can block shell-like actions before they ever reach your
+local bridge, especially commands that enumerate files, use pipes, or combine
+multiple shell operators. For a smoother connector experience, use
+`file_list` / `local_list_dir` for directories, `batch_read` for bounded
+multi-file reads, and `handoff_create` -> `codex_task_start` when local Codex
+CLI should run commands. The raw shell tools remain debug-only under the `full`
+/ `debug` profile for trusted local troubleshooting.
 
 This profile model is part of the bridge's own tool router and progressive
 disclosure roadmap: expose only the tools needed for the current trust level,
@@ -414,14 +424,14 @@ then let the local app and trace records explain what happened.
 | Policy | `policy.read`, `policy.validate` |
 | Skills | `skill.list`, `skill.search`, `skill.read`, `skill.bundle`, `skill.route` |
 | Code | `code.read`, `code.read_range`, `code.search` |
-| Files | `file.list`, `file.read_path`, `file.stat`, `file.write`, `file.patch`, `file.delete` |
-| Shell/tests | `shell.exec`, `test.detect`, `test.run` |
+| Files | `file.list`, `file.read_path`, `batch_read`, `file.stat`, `file.write`, `file.patch`, `file.delete` |
+| Shell/tests | `shell.exec` for local debug only; `test.detect`, `test.run` |
 | Git | `git.status`, `git.diff`, `git.checkpoint`, `git.revert` |
 | Runtime | `workspace.*`, `task.*`, `process.*`, `port.check` |
 | Cloud sync | `cloud.download` |
 | Bridge | `bridge.status`, `bridge.health`, `bridge.logs`, `bridge.activity`, `service.restart` |
 
-The full ChatGPT-visible tool catalog is generated from MCP `tools/list` into
+The full debug-profile MCP tool catalog is generated from MCP `tools/list` into
 [`assets/mcp-tools.json`](./assets/mcp-tools.json):
 
 ```bash
@@ -509,8 +519,9 @@ produced more connector/tool-call errors than the normal profile, so use it only
 for focused debugging with trace capture enabled.
 
 Field note: `codex.result` and `codex_result` return compact summaries by
-default. Full logs and diffs are opt-in with `includeLog` / `includeDiff`
-because hosted ChatGPT safety checks can block large execution records.
+default. Full logs, diffs, and handoff metadata are opt-in with `includeLog`,
+`includeDiff`, and `includeHandoff` because hosted ChatGPT safety checks can
+block large execution records or structured payloads.
 
 ## Star History
 
